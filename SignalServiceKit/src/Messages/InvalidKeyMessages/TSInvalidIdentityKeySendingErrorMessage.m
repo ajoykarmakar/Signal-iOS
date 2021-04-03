@@ -6,10 +6,9 @@
 #import "OWSFingerprint.h"
 #import "OWSIdentityManager.h"
 #import "PreKeyBundle+jsonDict.h"
-#import "SSKSessionStore.h"
 #import "TSContactThread.h"
 #import "TSOutgoingMessage.h"
-#import <AxolotlKit/NSData+keyVersionByte.h>
+#import <SignalServiceKit/NSData+keyVersionByte.h>
 #import <SignalServiceKit/SignalServiceKit-Swift.h>
 
 NS_ASSUME_NONNULL_BEGIN

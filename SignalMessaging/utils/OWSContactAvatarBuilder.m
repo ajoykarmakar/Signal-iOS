@@ -24,18 +24,6 @@ NS_ASSUME_NONNULL_BEGIN
 
 @implementation OWSContactAvatarBuilder
 
-#pragma mark - Dependencies
-
-- (OWSContactsManager *)contactsManager
-{
-    return (OWSContactsManager *)SSKEnvironment.shared.contactsManager;
-}
-
-- (SDSDatabaseStorage *)databaseStorage
-{
-    return SDSDatabaseStorage.shared;
-}
-
 #pragma mark - Initializers
 
 - (instancetype)initWithAddress:(nullable SignalServiceAddress *)address
@@ -121,17 +109,8 @@ NS_ASSUME_NONNULL_BEGIN
 {
     ConversationColorName color = [self.contactsManager conversationColorNameForAddress:address
                                                                             transaction:transaction];
-    return [[[self alloc] initWithAddress:address
-                                colorName:color
-                                 diameter:diameter
-                              transaction:transaction] build];
-}
-
-#pragma mark - Dependencies
-
-+ (OWSContactsManager *)contactsManager
-{
-    return (OWSContactsManager *)SSKEnvironment.shared.contactsManager;
+    return [[[self alloc] initWithAddress:address colorName:color diameter:diameter
+                              transaction:transaction] buildWithTransaction:transaction];
 }
 
 #pragma mark - Instance methods
@@ -146,7 +125,7 @@ NS_ASSUME_NONNULL_BEGIN
         return self.buildImageForLocalUser;
     }
 
-    return [OWSContactAvatarBuilder.contactsManager imageForAddressWithSneakyTransaction:self.address];
+    return [OWSContactAvatarBuilder.contactsManagerImpl imageForAddressWithSneakyTransaction:self.address];
 }
 
 - (nullable UIImage *)buildSavedImageWithTransaction:(SDSAnyReadTransaction *)transaction
@@ -159,7 +138,7 @@ NS_ASSUME_NONNULL_BEGIN
         return self.buildImageForLocalUser;
     }
 
-    return [OWSContactAvatarBuilder.contactsManager imageForAddress:self.address transaction:transaction];
+    return [OWSContactAvatarBuilder.contactsManagerImpl imageForAddress:self.address transaction:transaction];
 }
 
 - (nullable UIImage *)buildImageForLocalUser
@@ -167,8 +146,8 @@ NS_ASSUME_NONNULL_BEGIN
     OWSCAssertDebug(self.address.isLocalAddress);
     NSString *noteToSelfCacheKey = [NSString stringWithFormat:@"%@:note-to-self", self.cacheKey];
     UIImage *_Nullable cachedAvatar =
-        [OWSContactAvatarBuilder.contactsManager getImageFromAvatarCacheWithKey:noteToSelfCacheKey
-                                                                       diameter:(CGFloat)self.diameter];
+        [OWSContactAvatarBuilder.contactsManagerImpl getImageFromAvatarCacheWithKey:noteToSelfCacheKey
+                                                                           diameter:(CGFloat)self.diameter];
     if (cachedAvatar) {
         return cachedAvatar;
     }
@@ -179,9 +158,9 @@ NS_ASSUME_NONNULL_BEGIN
         return nil;
     }
 
-    [OWSContactAvatarBuilder.contactsManager setImageForAvatarCache:image
-                                                             forKey:noteToSelfCacheKey
-                                                           diameter:self.diameter];
+    [OWSContactAvatarBuilder.contactsManagerImpl setImageForAvatarCache:image
+                                                                 forKey:noteToSelfCacheKey
+                                                               diameter:self.diameter];
     return image;
 }
 
@@ -217,8 +196,8 @@ NS_ASSUME_NONNULL_BEGIN
 - (nullable UIImage *)buildDefaultImage
 {
     UIImage *_Nullable cachedAvatar =
-        [OWSContactAvatarBuilder.contactsManager getImageFromAvatarCacheWithKey:self.cacheKey
-                                                                       diameter:(CGFloat)self.diameter];
+        [OWSContactAvatarBuilder.contactsManagerImpl getImageFromAvatarCacheWithKey:self.cacheKey
+                                                                           diameter:(CGFloat)self.diameter];
     if (cachedAvatar) {
         return cachedAvatar;
     }
@@ -258,7 +237,9 @@ NS_ASSUME_NONNULL_BEGIN
         return nil;
     }
 
-    [OWSContactAvatarBuilder.contactsManager setImageForAvatarCache:image forKey:self.cacheKey diameter:self.diameter];
+    [OWSContactAvatarBuilder.contactsManagerImpl setImageForAvatarCache:image
+                                                                 forKey:self.cacheKey
+                                                               diameter:self.diameter];
     return image;
 }
 

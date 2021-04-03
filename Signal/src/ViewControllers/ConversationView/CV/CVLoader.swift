@@ -9,14 +9,6 @@ import PromiseKit
 @objc
 public class CVLoader: NSObject {
 
-    // MARK: - Dependencies
-
-    private static var databaseStorage: SDSDatabaseStorage {
-        return .shared
-    }
-
-    // MARK: -
-
     private let threadUniqueId: String
     private let loadRequest: CVLoadRequest
     private let viewStateSnapshot: CVViewStateSnapshot
@@ -291,6 +283,7 @@ public class CVLoader: NSObject {
                                                             avatarBuilder: avatarBuilder)
         guard let itemModel = CVItemModelBuilder.buildStandaloneItem(interaction: interaction,
                                                                      thread: thread,
+                                                                     threadViewModel: threadViewModel,
                                                                      itemBuildingContext: itemBuildingContext,
                                                                      transaction: transaction) else {
             owsFailDebug("Couldn't build item model.")

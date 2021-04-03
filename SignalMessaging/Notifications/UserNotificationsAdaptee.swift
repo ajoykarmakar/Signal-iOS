@@ -1,5 +1,5 @@
 //
-//  Copyright (c) 2020 Open Whisper Systems. All rights reserved.
+//  Copyright (c) 2021 Open Whisper Systems. All rights reserved.
 //
 
 import Foundation
@@ -83,14 +83,6 @@ class UserNotificationPresenterAdaptee: NSObject {
 }
 
 extension UserNotificationPresenterAdaptee: NotificationPresenterAdaptee {
-
-    // MARK: - Dependencies
-
-    var tsAccountManager: TSAccountManager {
-        return .shared()
-    }
-
-    // MARK: -
 
     func registerNotificationSettings() -> Promise<Void> {
         return Promise { resolver in
@@ -178,6 +170,7 @@ extension UserNotificationPresenterAdaptee: NotificationPresenterAdaptee {
                 owsFailDebug("Error: \(error)")
                 return
             }
+
             guard notificationIdentifier != UserNotificationPresenterAdaptee.kMigrationNotificationId else {
                 return
             }

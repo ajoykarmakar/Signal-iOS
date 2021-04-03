@@ -120,7 +120,7 @@ public extension UIColor {
 
     @objc(ows_gray10Color)
     class var ows_gray10: UIColor {
-        return UIColor(rgbHex: 0xD4D4D4)
+        return UIColor(rgbHex: 0xf0f0f0)
     }
 
     @objc(ows_gray15Color)
@@ -200,6 +200,11 @@ public extension UIColor {
         return UIColor(white: 1.0, alpha: 0.2)
     }
 
+    @objc(ows_whiteAlpha25Color)
+    class var ows_whiteAlpha25: UIColor {
+        return UIColor(white: 1.0, alpha: 0.25)
+    }
+
     @objc(ows_whiteAlpha30Color)
     class var ows_whiteAlpha30: UIColor {
         return UIColor(white: 1.0, alpha: 0.3)
@@ -230,9 +235,19 @@ public extension UIColor {
         return UIColor(white: 0, alpha: 0.05)
     }
 
+    @objc(ows_blackAlpha10Color)
+    class var ows_blackAlpha10: UIColor {
+        return UIColor(white: 0, alpha: 0.10)
+    }
+
     @objc(ows_blackAlpha20Color)
     class var ows_blackAlpha20: UIColor {
         return UIColor(white: 0, alpha: 0.20)
+    }
+
+    @objc(ows_blackAlpha25Color)
+    class var ows_blackAlpha25: UIColor {
+        return UIColor(white: 0, alpha: 0.25)
     }
 
     @objc(ows_blackAlpha40Color)
@@ -256,5 +271,18 @@ public extension UIColor {
     @objc(ows_reminderYellowColor)
     class var ows_reminderYellow: UIColor {
         return UIColor(rgbHex: 0xFCF0D9)
+    }
+
+    // MARK: -
+
+    class func ows_randomColor(isAlphaRandom: Bool) -> UIColor {
+        func randomComponent() -> CGFloat {
+            let precision: UInt32 = 255
+            return CGFloat(arc4random_uniform(precision + 1)) / CGFloat(precision)
+        }
+        return UIColor(red: randomComponent(),
+                       green: randomComponent(),
+                       blue: randomComponent(),
+                       alpha: isAlphaRandom ? randomComponent() : 1)
     }
 }

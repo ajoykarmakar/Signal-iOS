@@ -1,9 +1,10 @@
 //
-//  Copyright (c) 2020 Open Whisper Systems. All rights reserved.
+//  Copyright (c) 2021 Open Whisper Systems. All rights reserved.
 //
 
 import Foundation
 import PromiseKit
+import SafariServices
 
 @objc(OWSSupportConstants)
 @objcMembers class SupportConstants: NSObject {
@@ -12,8 +13,78 @@ import PromiseKit
     static let supportEmail = "support@signal.org"
 }
 
+enum ContactSupportFilter: String, CaseIterable {
+    case feature_request = "Feature Request"
+    case question = "Question"
+    case feedback = "Feedback"
+    case something_not_working = "Something Not Working"
+    case other = "Other"
+
+    var localizedString: String {
+        switch self {
+        case .feature_request:
+            return NSLocalizedString(
+                "CONTACT_SUPPORT_FILTER_FEATURE_REQUEST",
+                comment: "The localized representation of the 'feature request' support filter."
+            )
+        case .question:
+            return NSLocalizedString(
+                "CONTACT_SUPPORT_FILTER_QUESTION",
+                comment: "The localized representation of the 'question' support filter."
+            )
+        case .feedback:
+            return NSLocalizedString(
+                "CONTACT_SUPPORT_FILTER_FEEDBACK",
+                comment: "The localized representation of the 'feedback' support filter."
+            )
+        case .something_not_working:
+            return NSLocalizedString(
+                "CONTACT_SUPPORT_FILTER_SOMETHING_NOT_WORKING",
+                comment: "The localized representation of the 'something not working' support filter."
+            )
+        case .other:
+            return NSLocalizedString(
+                "CONTACT_SUPPORT_FILTER_OTHER",
+                comment: "The localized representation of the 'other' support filter."
+            )
+        }
+    }
+
+    var localizedShortString: String {
+        switch self {
+        case .feature_request:
+            return NSLocalizedString(
+                "CONTACT_SUPPORT_FILTER_FEATURE_REQUEST_SHORT",
+                comment: "A brief localized representation of the 'feature request' support filter."
+            )
+        case .question:
+            return NSLocalizedString(
+                "CONTACT_SUPPORT_FILTER_QUESTION_SHORT",
+                comment: "A brief localized representation of the 'question' support filter."
+            )
+        case .feedback:
+            return NSLocalizedString(
+                "CONTACT_SUPPORT_FILTER_FEEDBACK_SHORT",
+                comment: "A brief localized representation of the 'feedback' support filter."
+            )
+        case .something_not_working:
+            return NSLocalizedString(
+                "CONTACT_SUPPORT_FILTER_SOMETHING_NOT_WORKING_SHORT",
+                comment: "A brief localized representation of the 'something not working' support filter."
+            )
+        case .other:
+            return NSLocalizedString(
+                "CONTACT_SUPPORT_FILTER_OTHER_SHORT",
+                comment: "A brief localized representation of the 'other' support filter."
+            )
+        }
+    }
+}
+
 @objc(OWSContactSupportViewController)
-final class ContactSupportViewController: OWSTableViewController {
+final class ContactSupportViewController: OWSTableViewController2 {
+
+    var selectedFilter: ContactSupportFilter?
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -21,7 +92,6 @@ final class ContactSupportViewController: OWSTableViewController {
         tableView.keyboardDismissMode = .interactive
         tableView.separatorInsetReference = .fromCellEdges
         tableView.separatorInset = .zero
-        useThemeBackgroundColors = false
 
         rebuildTableContents()
         setupNavigationBar()
@@ -68,7 +138,11 @@ final class ContactSupportViewController: OWSTableViewController {
         navigationItem.rightBarButtonItem?.isEnabled = false
     }
 
-    @objc override func applyTheme() {
+    func updateRightBarButton() {
+        navigationItem.rightBarButtonItem?.isEnabled = (descriptionField.text.count > 10) && selectedFilter != nil
+    }
+
+    override func applyTheme() {
         super.applyTheme()
         navigationItem.rightBarButtonItem?.tintColor = Theme.accentBlueColor
 
@@ -143,6 +217,9 @@ final class ContactSupportViewController: OWSTableViewController {
         emailRequest.userDescription = descriptionField.text
         emailRequest.emojiMood = emojiPicker.selectedMood
         emailRequest.debugLogPolicy = debugSwitch.isOn ? .attemptUpload : .none
+        if let selectedFilter = selectedFilter {
+            emailRequest.supportFilter = "iOS \(selectedFilter.rawValue)"
+        }
         let operation = ComposeSupportEmailOperation(model: emailRequest)
         currentEmailComposeOperation = operation
         showSpinnerOnNextButton = true
@@ -169,14 +246,14 @@ final class ContactSupportViewController: OWSTableViewController {
 
 // MARK: - <SupportRequestTextViewDelegate>
 
-extension ContactSupportViewController: SupportRequestTextViewDelegate, UIScrollViewDelegate {
+extension ContactSupportViewController: SupportRequestTextViewDelegate {
 
     func textViewDidUpdateSelection(_ textView: SupportRequestTextView) {
         scrollToFocus(animated: true)
     }
 
     func textViewDidUpdateText(_ textView: SupportRequestTextView) {
-        self.navigationItem.rightBarButtonItem?.isEnabled = (textView.text.count > 10)
+        updateRightBarButton()
 
         // Disable interactive presentation if the user has entered text
         if #available(iOS 13, *) {
@@ -238,9 +315,26 @@ extension ContactSupportViewController {
 
             OWSTableSection(title: contactHeaderText, items: [
 
+                // Filter selection
+                OWSTableItem(customCell: OWSTableItem.buildIconNameCell(
+                    itemName: NSLocalizedString(
+                        "CONTACT_SUPPORT_FILTER_PROMPT",
+                        comment: "Prompt telling the user to select a filter for their support request."
+                    ),
+                    accessoryText: self.selectedFilter?.localizedShortString ?? NSLocalizedString(
+                        "CONTACT_SUPPORT_SELECT_A_FILTER",
+                        comment: "Placeholder telling user they must select a filter."
+                    ),
+                    accessoryTextColor: self.selectedFilter == nil ? Theme.placeholderColor : nil
+                ),
+                actionBlock: { [weak self] in
+                    self?.showFilterPicker()
+                }),
+
                 // Description field
-                OWSTableItem(customCellBlock: {
+                OWSTableItem(customCellBlock: { [weak self] in
                     let cell = OWSTableItem.newCell()
+                    guard let self = self else { return cell }
                     cell.contentView.addSubview(self.descriptionField)
                     self.descriptionField.autoPinEdgesToSuperviewMargins()
                     self.descriptionField.autoSetDimension(.height, toSize: 125, relation: .greaterThanOrEqual)
@@ -260,8 +354,9 @@ extension ContactSupportViewController {
                     cell.textLabel?.textColor = Theme.accentBlueColor
                     return cell
                 },
-                   actionBlock: {
-                    UIApplication.shared.open(SupportConstants.supportURL, options: [:])
+                   actionBlock: { [weak self] in
+                    let vc = SFSafariViewController(url: SupportConstants.supportURL)
+                    self?.present(vc, animated: true)
                 })
             ]),
 
@@ -287,8 +382,9 @@ extension ContactSupportViewController {
         label.numberOfLines = 0
         label.textColor = Theme.primaryTextColor
 
-        let infoButton = OWSButton(imageName: "help-outline-24", tintColor: Theme.secondaryTextAndIconColor) {
-            UIApplication.shared.open(SupportConstants.debugLogsInfoURL, options: [:])
+        let infoButton = OWSButton(imageName: "help-outline-24", tintColor: Theme.secondaryTextAndIconColor) { [weak self] in
+            let vc = SFSafariViewController(url: SupportConstants.debugLogsInfoURL)
+            self?.present(vc, animated: true)
         }
         infoButton.accessibilityLabel = NSLocalizedString("DEBUG_LOG_INFO_BUTTON",
                                                           comment: "Accessibility label for the ? vector asset used to get info about debug logs")
@@ -318,5 +414,25 @@ extension ContactSupportViewController {
         containerView.addSubview(emojiPicker)
         emojiPicker.autoPinEdges(toSuperviewMarginsExcludingEdge: .trailing)
         return containerView
+    }
+
+    func showFilterPicker() {
+        let actionSheet = ActionSheetController(title: NSLocalizedString(
+            "CONTACT_SUPPORT_FILTER_PROMPT",
+            comment: "Prompt telling the user to select a filter for their support request."
+        ))
+        actionSheet.addAction(OWSActionSheets.cancelAction)
+
+        for filter in ContactSupportFilter.allCases {
+            let action = ActionSheetAction(title: filter.localizedString) { [weak self] _ in
+                self?.selectedFilter = filter
+                self?.updateRightBarButton()
+                self?.rebuildTableContents()
+            }
+            if selectedFilter == filter { action.trailingIcon = .checkCircle }
+            actionSheet.addAction(action)
+        }
+
+        presentActionSheet(actionSheet)
     }
 }

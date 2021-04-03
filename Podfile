@@ -12,16 +12,13 @@ pod 'SwiftProtobuf', "1.7.0"
 pod 'SignalCoreKit', git: 'https://github.com/signalapp/SignalCoreKit.git', testspecs: ["Tests"]
 # pod 'SignalCoreKit', path: '../SignalCoreKit', testspecs: ["Tests"]
 
-pod 'AxolotlKit', git: 'https://github.com/signalapp/SignalProtocolKit.git', branch: 'master', testspecs: ["Tests"]
-# pod 'AxolotlKit', path: '../SignalProtocolKit', testspecs: ["Tests"]
+pod 'SignalClient', git: 'https://github.com/signalapp/libsignal-client.git', testspecs: ["Tests"]
+# pod 'SignalClient', path: '../libsignal-client', testspecs: ["Tests"]
 
-pod 'HKDFKit', git: 'https://github.com/signalapp/HKDFKit.git', testspecs: ["Tests"]
-# pod 'HKDFKit', path: '../HKDFKit', testspecs: ["Tests"]
-
-pod 'Curve25519Kit', git: 'https://github.com/signalapp/Curve25519Kit', testspecs: ["Tests"]
+pod 'Curve25519Kit', git: 'ssh://git@github.com/signalapp/Curve25519Kit', testspecs: ["Tests"], branch: 'feature/SignalClient-adoption'
 # pod 'Curve25519Kit', path: '../Curve25519Kit', testspecs: ["Tests"]
 
-pod 'SignalMetadataKit', git: 'https://github.com/signalapp/SignalMetadataKit', testspecs: ["Tests"]
+pod 'SignalMetadataKit', git: 'ssh://git@github.com/signalapp/SignalMetadataKit', testspecs: ["Tests"], branch: 'feature/SignalClient-adoption'
 # pod 'SignalMetadataKit', path: '../SignalMetadataKit', testspecs: ["Tests"]
 
 pod 'blurhash', git: 'https://github.com/signalapp/blurhash', branch: 'signal-master'
@@ -50,10 +47,6 @@ pod 'SQLCipher', ">= 4.0.1"
 pod 'Mantle', git: 'https://github.com/signalapp/Mantle', branch: 'signal-master'
 # pod 'Mantle', path: '../Mantle'
 
-# Forked for compatibily with the ShareExtension, changes have an open PR, but have not been merged.
-pod 'YapDatabase/SQLCipher', :git => 'https://github.com/signalapp/YapDatabase.git', branch: 'signal-release'
-# pod 'YapDatabase/SQLCipher', path: '../YapDatabase'
-
 # Forked to incorporate our self-built binary artifact.
 pod 'GRKOpenSSLFramework', git: 'https://github.com/signalapp/GRKOpenSSLFramework', branch: 'mkirk/1.0.2t'
 #pod 'GRKOpenSSLFramework', path: '../GRKOpenSSLFramework'
@@ -81,9 +74,11 @@ pod 'BonMot', inhibit_warnings: true
 pod 'ZXingObjC', git: 'https://github.com/zxingify/zxingify-objc.git', inhibit_warnings: true, binary: true
 
 target 'Signal' do
+  project 'Signal.xcodeproj', 'Debug' => :debug, 'Release' => :release
+
   # Pods only available inside the main Signal app
   pod 'SSZipArchive', :inhibit_warnings => true
-  pod 'SignalRingRTC', path: 'ThirdParty/SignalRingRTC.podspec', inhibit_wranings: true
+  pod 'SignalRingRTC', path: 'ThirdParty/SignalRingRTC.podspec', inhibit_warnings: true
 
   target 'SignalTests' do
     inherit! :search_paths
@@ -105,6 +100,7 @@ post_install do |installer|
   configure_warning_flags(installer)
   configure_testable_build(installer)
   disable_bitcode(installer)
+  disable_non_development_pod_warnings(installer)
   copy_acknowledgements
 end
 
@@ -121,7 +117,8 @@ def enable_extension_support_for_purelayout(installer)
   installer.pods_project.targets.each do |target|
     if target.name.end_with? "PureLayout"
       target.build_configurations.each do |build_configuration|
-         build_configuration.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] ||= '$(inherited) PURELAYOUT_APP_EXTENSIONS=1'
+         build_configuration.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] ||= '$(inherited)'
+         build_configuration.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] << ' PURELAYOUT_APP_EXTENSIONS=1'
       end
     end
   end
@@ -149,17 +146,22 @@ end
 def configure_testable_build(installer)
   installer.pods_project.targets.each do |target|
     target.build_configurations.each do |build_configuration|
-      next unless ["Testable Release", "Debug"].include?(build_configuration.name)
+      next unless ["Testable Release", "Debug", "Profiling"].include?(build_configuration.name)
+      build_configuration.build_settings['ONLY_ACTIVE_ARCH'] = 'YES'
 
-      build_configuration.build_settings['OTHER_CFLAGS'] ||= '$(inherited) -DTESTABLE_BUILD'
-      build_configuration.build_settings['OTHER_SWIFT_FLAGS'] ||= '$(inherited) -DTESTABLE_BUILD'
+      next unless ["Testable Release", "Debug"].include?(build_configuration.name)
+      build_configuration.build_settings['OTHER_CFLAGS'] ||= '$(inherited)'
+      build_configuration.build_settings['OTHER_CFLAGS'] << ' -DTESTABLE_BUILD'
+
+      build_configuration.build_settings['OTHER_SWIFT_FLAGS'] ||= '$(inherited)'
+      build_configuration.build_settings['OTHER_SWIFT_FLAGS'] << ' -DTESTABLE_BUILD'
       if target.name.end_with? "PureLayout"
         # Avoid overwriting the PURELAYOUT_APP_EXTENSIONS.
       else
-       build_configuration.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] ||= '$(inherited) TESTABLE_BUILD=1'
+        build_configuration.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] ||= '$(inherited)'
+        build_configuration.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] << ' TESTABLE_BUILD=1'
       end
       build_configuration.build_settings['ENABLE_TESTABILITY'] = 'YES'
-      build_configuration.build_settings['ONLY_ACTIVE_ARCH'] = 'YES'
     end
   end
 end
@@ -169,6 +171,38 @@ def disable_bitcode(installer)
   installer.pods_project.targets.each do |target|
     target.build_configurations.each do |config|
       config.build_settings['ENABLE_BITCODE'] = 'NO'
+    end
+  end
+end
+
+# Disable warnings on any Pod not currently being modified
+def disable_non_development_pod_warnings(installer)
+  non_development_targets = installer.pod_targets.select do |target|
+    !installer.development_pod_targets.include?(target)
+  end
+
+  # ZKGroup is security sensitive and is going to be around for the foreseeable
+  # future. Let's always warn for it to keep an eye on the warnings
+  # (and also fix the warnings)
+  always_warn_names = ['ZKGroup']
+
+  installer.pods_project.targets.each do |target|
+    target.build_configurations.each do |build_configuration|
+      # Only suppress warnings for the debug configuration
+      # If we're building for release, continue to display warnings for all projects
+      next if build_configuration.name != "Debug"
+
+      next unless non_development_targets.any? do |non_dev_target|
+        target.name.include?(non_dev_target.name)
+      end
+
+      next if always_warn_names.any? do |warnable_target_name|
+        target.name.include?(warnable_target_name)
+      end
+
+      build_configuration.build_settings['GCC_WARN_INHIBIT_ALL_WARNINGS'] = 'YES'
+      build_configuration.build_settings['OTHER_SWIFT_FLAGS'] ||= '$(inherited)'
+      build_configuration.build_settings['OTHER_SWIFT_FLAGS'] << ' -suppress-warnings'
     end
   end
 end

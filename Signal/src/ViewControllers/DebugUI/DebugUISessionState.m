@@ -6,7 +6,6 @@
 #import "Signal-Swift.h"
 #import <SignalMessaging/OWSTableViewController.h>
 #import <SignalServiceKit/OWSIdentityManager.h>
-#import <SignalServiceKit/SSKSessionStore.h>
 #import <SignalServiceKit/SignalServiceKit-Swift.h>
 #import <SignalServiceKit/TSContactThread.h>
 
@@ -19,28 +18,6 @@ NS_ASSUME_NONNULL_BEGIN
 - (NSString *)name
 {
     return @"Session State";
-}
-
-#pragma mark -  Dependencies
-
-- (SDSDatabaseStorage *)databaseStorage
-{
-    return SDSDatabaseStorage.shared;
-}
-
-- (SSKSessionStore *)sessionStore
-{
-    return SSKEnvironment.shared.sessionStore;
-}
-
-- (OWSSessionResetJobQueue *)sessionResetJobQueue
-{
-    return AppEnvironment.shared.sessionResetJobQueue;
-}
-
-- (id<ContactsManagerProtocol>)contactsManager
-{
-    return SSKEnvironment.shared.contactsManager;
 }
 
 #pragma mark -

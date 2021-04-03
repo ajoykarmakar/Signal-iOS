@@ -43,38 +43,6 @@ NS_ASSUME_NONNULL_BEGIN
     return instance;
 }
 
-#pragma mark - Dependencies
-
-+ (MessageSenderJobQueue *)messageSenderJobQueue
-{
-    return SSKEnvironment.shared.messageSenderJobQueue;
-}
-
-- (MessageSenderJobQueue *)messageSenderJobQueue
-{
-    return self.class.messageSenderJobQueue;
-}
-
-+ (MessageSender *)messageSender
-{
-    return SSKEnvironment.shared.messageSender;
-}
-
-+ (SDSDatabaseStorage *)databaseStorage
-{
-    return SDSDatabaseStorage.shared;
-}
-
-- (SDSDatabaseStorage *)databaseStorage
-{
-    return SDSDatabaseStorage.shared;
-}
-
-+ (TSAccountManager *)tsAccountManager
-{
-    return TSAccountManager.shared;
-}
-
 #pragma mark - Factory Methods
 
 - (NSString *)name
@@ -502,6 +470,8 @@ NS_ASSUME_NONNULL_BEGIN
             [items addObject:[OWSTableItem itemWithTitle:@"Make all members admins"
                                              actionBlock:^{ [DebugUIStress makeAllMembersAdmin:groupThread]; }]];
         }
+        [items addObject:[OWSTableItem itemWithTitle:@"Log membership"
+                                         actionBlock:^{ [DebugUIStress logMembership:groupThread]; }]];
     }
 
     [items addObject:[OWSTableItem itemWithTitle:@"Make group w. unregistered users"
@@ -518,10 +488,9 @@ NS_ASSUME_NONNULL_BEGIN
                                      actionBlock:^{
                                          [weakSelf thrashWithMaxWritesPerSecond:100 thread:thread];
                                      }]];
-    [items addObject:[OWSTableItem itemWithTitle:@"Stop thrash"
-                                     actionBlock:^{
-                                         [weakSelf stopThrash];
-                                     }]];
+    [items addObject:[OWSTableItem itemWithTitle:@"Stop thrash" actionBlock:^{ [weakSelf stopThrash]; }]];
+    [items addObject:[OWSTableItem itemWithTitle:@"Delete other profiles"
+                                     actionBlock:^{ [DebugUIStress deleteOtherProfiles]; }]];
 
     return [OWSTableSection sectionWithTitle:self.name items:items];
 }
@@ -608,12 +577,8 @@ NS_ASSUME_NONNULL_BEGIN
         avatarData:nil
         newGroupSeed:nil
         shouldSendMessage:NO
-        success:^(TSGroupThread *thread) {
-            [SignalApp.sharedApp presentConversationForThread:thread animated:YES];
-        }
-        failure:^(NSError *error) {
-            OWSFailDebug(@"Error: %@", error);
-        }];
+        success:^(TSGroupThread *thread) { [SignalApp.shared presentConversationForThread:thread animated:YES]; }
+        failure:^(NSError *error) { OWSFailDebug(@"Error: %@", error); }];
 }
 
 - (void)thrashWithMaxWritesPerSecond:(NSUInteger)maxWritesPerSecond thread:(TSThread *)thread

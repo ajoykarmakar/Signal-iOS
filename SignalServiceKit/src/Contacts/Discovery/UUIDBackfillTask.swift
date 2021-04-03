@@ -1,5 +1,5 @@
 //
-//  Copyright (c) 2020 Open Whisper Systems. All rights reserved.
+//  Copyright (c) 2021 Open Whisper Systems. All rights reserved.
 //
 
 import Foundation
@@ -42,7 +42,7 @@ public class UUIDBackfillTask: NSObject {
     // MARK: - Public
 
     func performWithCompletion(_ completion: @escaping () -> Void = {}) {
-        readiness.runNowOrWhenAppDidBecomeReady {
+        readiness.runNowOrWhenAppDidBecomeReadySync {
             self.queue.async {
                 self.onqueue_start(with: completion)
             }
@@ -161,7 +161,8 @@ public class UUIDBackfillTask: NSObject {
     }
 }
 
-// MARK: - Dependencies
+// MARK: -
+
 extension UUIDBackfillTask {
 
     // This extension encapsulates some of UUIDBackfillTask's cross-class dependencies
@@ -181,8 +182,8 @@ extension UUIDBackfillTask {
     class ReadinessProvider {
         static var `default`: ReadinessProvider { return ReadinessProvider() }
 
-        func runNowOrWhenAppDidBecomeReady(_ workItem: @escaping () -> Void) {
-            AppReadiness.runNowOrWhenAppDidBecomeReady(workItem)
+        func runNowOrWhenAppDidBecomeReadySync(_ workItem: @escaping () -> Void) {
+            AppReadiness.runNowOrWhenAppDidBecomeReadySync(workItem)
         }
     }
 }

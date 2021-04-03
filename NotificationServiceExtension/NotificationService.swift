@@ -1,5 +1,5 @@
 //
-//  Copyright (c) 2020 Open Whisper Systems. All rights reserved.
+//  Copyright (c) 2021 Open Whisper Systems. All rights reserved.
 //
 
 import UserNotifications
@@ -11,18 +11,6 @@ class NotificationService: UNNotificationServiceExtension {
 
     var contentHandler: ((UNNotificationContent) -> Void)?
     var areVersionMigrationsComplete = false
-
-    var storageCoordinator: StorageCoordinator {
-        return SSKEnvironment.shared.storageCoordinator
-    }
-
-    var messageProcessing: MessageProcessing {
-        return .shared
-    }
-
-    var messageFetcherJob: MessageFetcherJob {
-        return SSKEnvironment.shared.messageFetcherJob
-    }
 
     func completeSilenty() {
         contentHandler?(.init())
@@ -67,7 +55,7 @@ class NotificationService: UNNotificationServiceExtension {
 
             Logger.info("Processing received notification.")
 
-            AppReadiness.runNowOrWhenAppDidBecomeReady { self.fetchAndProcessMessages() }
+            AppReadiness.runNowOrWhenAppDidBecomeReadySync { self.fetchAndProcessMessages() }
         }
     }
 
@@ -108,20 +96,18 @@ class NotificationService: UNNotificationServiceExtension {
 
         Cryptography.seedRandom()
 
-        // We should never receive a non-voip notification on an app that doesn't support
-        // app extensions since we have to inform the service we wanted these, so in theory
-        // this path should never occur. However, the service does have our push token
-        // so it is possible that could change in the future. If it does, do nothing
-        // and don't disturb the user. Messages will be processed when they open the app.
-        guard OWSPreferences.isReadyForAppExtensions() else { return completeSilenty() }
-
         AppSetup.setupEnvironment(
             appSpecificSingletonBlock: {
                 // TODO: calls..
-                SSKEnvironment.shared.callMessageHandler = NoopCallMessageHandler()
-                SSKEnvironment.shared.notificationsManager = NotificationPresenter()
+                SSKEnvironment.shared.callMessageHandlerRef = NoopCallMessageHandler()
+                SSKEnvironment.shared.notificationsManagerRef = NotificationPresenter()
             },
-            migrationCompletion: { [weak self] in
+            migrationCompletion: { [weak self] error in
+                if let error = error {
+                    // TODO: Maybe notify that you should open the main app.
+                    owsFailDebug("Error \(error)")
+                    return
+                }
                 self?.versionMigrationsDidComplete()
             }
         )
@@ -252,7 +238,7 @@ class NotificationService: UNNotificationServiceExtension {
         Logger.info("Beginning message fetch.")
 
         messageFetcherJob.run().promise.then {
-            return self.messageProcessing.flushMessageDecryptionAndProcessingPromise().asVoid()
+            return self.messageProcessor.processingCompletePromise()
         }.ensure {
             Logger.info("Message fetch completed.")
             self.isProcessingMessages.set(false)

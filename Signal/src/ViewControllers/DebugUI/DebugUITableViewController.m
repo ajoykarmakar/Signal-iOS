@@ -1,9 +1,8 @@
 //
-//  Copyright (c) 2020 Open Whisper Systems. All rights reserved.
+//  Copyright (c) 2021 Open Whisper Systems. All rights reserved.
 //
 
 #import "DebugUITableViewController.h"
-#import "DebugUIBackup.h"
 #import "DebugUIContacts.h"
 #import "DebugUIDiskUsage.h"
 #import "DebugUIMessages.h"
@@ -126,8 +125,6 @@ NS_ASSUME_NONNULL_BEGIN
                                                                              animated:YES];
                                                            }];
     [subsectionItems addObject:dataStoreItem];
-    [subsectionItems
-        addObject:[self itemForSubsection:[DebugUIBackup new] viewController:viewController thread:thread]];
     [subsectionItems addObject:[self itemForSubsection:[DebugUIGroupsV2 new]
                                         viewController:viewController
                                                 thread:thread]];
@@ -156,7 +153,6 @@ NS_ASSUME_NONNULL_BEGIN
         addObject:[self itemForSubsection:[DebugUISessionState new] viewController:viewController thread:nil]];
     [subsectionItems
         addObject:[self itemForSubsection:[DebugUISyncMessages new] viewController:viewController thread:nil]];
-    [subsectionItems addObject:[self itemForSubsection:[DebugUIBackup new] viewController:viewController thread:nil]];
     [subsectionItems addObject:[self itemForSubsection:[DebugUIGroupsV2 new] viewController:viewController thread:nil]];
     [subsectionItems addObject:[self itemForSubsection:[DebugUIScreenshots new]
                                         viewController:viewController
@@ -166,6 +162,15 @@ NS_ASSUME_NONNULL_BEGIN
 
     viewController.contents = contents;
     [viewController presentFromViewController:fromViewController];
+}
+
++ (BOOL)useDebugUI
+{
+#ifdef USE_DEBUG_UI
+    return YES;
+#else
+    return NO;
+#endif
 }
 
 @end

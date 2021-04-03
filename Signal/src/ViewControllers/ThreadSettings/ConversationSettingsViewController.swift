@@ -33,7 +33,7 @@ public protocol ConversationSettingsViewDelegate: class {
 
 // TODO: We should describe which state updates & when it is committed.
 @objc
-class ConversationSettingsViewController: OWSTableViewController {
+class ConversationSettingsViewController: OWSTableViewController2 {
 
     @objc
     public weak var conversationSettingsViewDelegate: ConversationSettingsViewDelegate?
@@ -60,7 +60,6 @@ class ConversationSettingsViewController: OWSTableViewController {
 
     var disappearingMessagesConfiguration: OWSDisappearingMessagesConfiguration
     var avatarView: UIImageView?
-    let disappearingMessagesDurationLabel = UILabel()
 
     // This is currently disabled behind a feature flag.
     private var colorPicker: ColorPicker?
@@ -125,43 +124,28 @@ class ConversationSettingsViewController: OWSTableViewController {
         return thread.isGroupThread
     }
 
-    var disappearingMessagesDurations: [NSNumber] {
-        return OWSDisappearingMessagesConfiguration.validDurationsSeconds()
-    }
-
-    class var headerBackgroundColor: UIColor {
-        return (Theme.isDarkThemeEnabled ? Theme.tableViewBackgroundColor : Theme.tableCellBackgroundColor)
-    }
-
     // MARK: - View Lifecycle
 
     @objc
     public override func viewDidLoad() {
         super.viewDidLoad()
 
+        defaultSeparatorInsetLeading = Self.cellHInnerMargin + 24 + OWSTableItem.iconSpacing
+
         if isGroupThread {
             updateNavigationBar()
-        } else {
-            self.title = NSLocalizedString(
-                "CONVERSATION_SETTINGS_CONTACT_INFO_TITLE", comment: "Navbar title when viewing settings for a 1-on-1 thread")
         }
-
-        self.useThemeBackgroundColors = true
-        tableView.estimatedRowHeight = 45
-        tableView.rowHeight = UITableView.automaticDimension
 
         // The header should "extend" offscreen so that we
         // don't see the root view's background color if we scroll down.
         let backgroundTopView = UIView()
-        backgroundTopView.backgroundColor = Self.headerBackgroundColor
+        backgroundTopView.backgroundColor = tableBackgroundColor
         tableView.addSubview(backgroundTopView)
         backgroundTopView.autoPinEdge(.leading, to: .leading, of: view, withOffset: 0)
         backgroundTopView.autoPinEdge(.trailing, to: .trailing, of: view, withOffset: 0)
         let backgroundTopSize: CGFloat = 300
         backgroundTopView.autoSetDimension(.height, toSize: backgroundTopSize)
         backgroundTopView.autoPinEdge(.bottom, to: .top, of: tableView, withOffset: 0)
-
-        disappearingMessagesDurationLabel.setAccessibilityIdentifier(in: self, name: "disappearingMessagesDurationLabel")
 
         if DebugFlags.shouldShowColorPicker {
             let colorPicker = ColorPicker(thread: self.thread)
@@ -182,7 +166,7 @@ class ConversationSettingsViewController: OWSTableViewController {
             return
         }
 
-        if isGroupThread || contactsManager.isSystemContactsAuthorized {
+        if isGroupThread || contactsManagerImpl.isSystemContactsAuthorized {
             navigationItem.rightBarButtonItem = UIBarButtonItem(
                 title: NSLocalizedString("CONVERSATION_SETTINGS_EDIT",
                                          comment: "Label for the 'edit' button in conversation settings view."),
@@ -334,16 +318,16 @@ class ConversationSettingsViewController: OWSTableViewController {
                 showGroupAttributesView(editAction: .avatar)
             } else if isGroupThread {
                 showGroupAttributesView(editAction: .name)
-            } else if contactsManager.supportsContactEditing {
+            } else if contactsManagerImpl.supportsContactEditing {
                 presentContactViewController()
             }
         }
     }
 
     func showShareProfileAlert() {
-        profileManager.presentAddThread(toProfileWhitelist: thread,
-                                        from: self) {
-                                            self.updateTableContents()
+        profileManagerImpl.presentAddThread(toProfileWhitelist: thread,
+                                            from: self) {
+            self.updateTableContents()
         }
     }
 
@@ -358,9 +342,10 @@ class ConversationSettingsViewController: OWSTableViewController {
     }
 
     func showSoundSettingsView() {
-        let vc = OWSSoundSettingsViewController()
-        vc.thread = thread
-        navigationController?.pushViewController(vc, animated: true)
+        let vc = NotificationSettingsSoundViewController(thread: thread) { [weak self] in
+            self?.updateTableContents()
+        }
+        presentFormSheet(OWSNavigationController(rootViewController: vc), animated: true)
     }
 
     func showWallpaperSettingsView() {
@@ -597,7 +582,7 @@ class ConversationSettingsViewController: OWSTableViewController {
     }
 
     func presentContactViewController() {
-        if !contactsManager.supportsContactEditing {
+        if !contactsManagerImpl.supportsContactEditing {
             owsFailDebug("Contact editing not supported")
             return
         }
@@ -629,13 +614,13 @@ class ConversationSettingsViewController: OWSTableViewController {
 
     private func presentAddToContactViewController(address: SignalServiceAddress) {
 
-        if !contactsManager.supportsContactEditing {
+        if !contactsManagerImpl.supportsContactEditing {
             // Should not expose UI that lets the user get here.
             owsFailDebug("Contact editing not supported.")
             return
         }
 
-        if !contactsManager.isSystemContactsAuthorized {
+        if !contactsManagerImpl.isSystemContactsAuthorized {
             contactsViewHelper.presentMissingContactAccessAlertController(from: self)
             return
         }
@@ -759,15 +744,6 @@ class ConversationSettingsViewController: OWSTableViewController {
         }
     }
 
-    @objc
-    func disappearingMessagesSwitchValueDidChange(_ sender: UISwitch) {
-        assert(canEditConversationAttributes)
-
-        toggleDisappearingMessages(sender.isOn)
-
-        updateTableContents()
-    }
-
     func didTapUnblockGroup() {
         let isCurrentlyBlocked = blockingManager.isThreadBlocked(thread)
         if !isCurrentlyBlocked {
@@ -790,79 +766,27 @@ class ConversationSettingsViewController: OWSTableViewController {
         }
     }
 
-    private func toggleDisappearingMessages(_ flag: Bool) {
-        assert(canEditConversationAttributes)
-
-        self.disappearingMessagesConfiguration = self.disappearingMessagesConfiguration.copy(withIsEnabled: flag)
-
-        updateTableContents()
-    }
-
-    @objc
-    func durationSliderDidChange(_ slider: UISlider) {
-        assert(canEditConversationAttributes)
-
-        let values = self.disappearingMessagesDurations.map { $0.uint32Value }
-        let maxValue = values.count - 1
-        let index = Int(slider.value + 0.5).clamp(0, maxValue)
-        if !slider.isTracking {
-            // Snap the slider to a valid value unless the user
-            // is still interacting with the control.
-            slider.setValue(Float(index), animated: true)
-        }
-        guard let durationSeconds = values[safe: index] else {
-            owsFailDebug("Invalid index: \(index)")
-            return
-        }
-        self.disappearingMessagesConfiguration =
-            self.disappearingMessagesConfiguration.copyAsEnabled(withDurationSeconds: durationSeconds)
-
-        updateDisappearingMessagesDurationLabel()
-    }
-
-    func updateDisappearingMessagesDurationLabel() {
-        if disappearingMessagesConfiguration.isEnabled {
-            let keepForFormat = NSLocalizedString("KEEP_MESSAGES_DURATION",
-                                                  comment: "Slider label embeds {{TIME_AMOUNT}}, e.g. '2 hours'. See *_TIME_AMOUNT strings for examples.")
-            disappearingMessagesDurationLabel.text = String(format: keepForFormat, disappearingMessagesConfiguration.durationString)
-        } else {
-            disappearingMessagesDurationLabel.text
-                = NSLocalizedString("KEEP_MESSAGES_FOREVER", comment: "Slider label when disappearing messages is off")
-        }
-
-        disappearingMessagesDurationLabel.setNeedsLayout()
-        disappearingMessagesDurationLabel.superview?.setNeedsLayout()
-    }
-
     func showMuteUnmuteActionSheet() {
-        // The "unmute" action sheet has no title or message; the
-        // action label speaks for itself.
-        var title: String?
-        var message: String?
-        if !thread.isMuted {
-            title = NSLocalizedString(
-                "CONVERSATION_SETTINGS_MUTE_ACTION_SHEET_TITLE", comment: "Title of the 'mute this thread' action sheet.")
-            message = NSLocalizedString(
-                "MUTE_BEHAVIOR_EXPLANATION", comment: "An explanation of the consequences of muting a thread.")
-        }
-
-        let actionSheet = ActionSheetController(title: title, message: message)
+        let actionSheet = ActionSheetController(
+            message: thread.isMuted ? nil : NSLocalizedString(
+                "CONVERSATION_SETTINGS_MUTE_ACTION_SHEET_TITLE",
+                comment: "Title for the mute action sheet"
+            )
+        )
 
         if thread.isMuted {
             let action =
                 ActionSheetAction(title: NSLocalizedString("CONVERSATION_SETTINGS_UNMUTE_ACTION",
                                                            comment: "Label for button to unmute a thread."),
-                                  accessibilityIdentifier: UIView.accessibilityIdentifier(in: self, name: "unmute"),
-                                  style: .destructive) { [weak self] _ in
-                                    self?.setThreadMutedUntilDate(nil)
+                                  accessibilityIdentifier: UIView.accessibilityIdentifier(in: self, name: "unmute")) { [weak self] _ in
+                                    self?.setThreadMutedUntilTimestamp(0)
             }
             actionSheet.addAction(action)
         } else {
             #if DEBUG
             actionSheet.addAction(ActionSheetAction(title: NSLocalizedString("CONVERSATION_SETTINGS_MUTE_ONE_MINUTE_ACTION",
                                                                              comment: "Label for button to mute a thread for a minute."),
-                                                    accessibilityIdentifier: UIView.accessibilityIdentifier(in: self, name: "mute_1_minute"),
-                                                    style: .destructive) { [weak self] _ in
+                                                    accessibilityIdentifier: UIView.accessibilityIdentifier(in: self, name: "mute_1_minute")) { [weak self] _ in
                                                         self?.setThreadMuted {
                                                             var dateComponents = DateComponents()
                                                             dateComponents.minute = 1
@@ -872,18 +796,25 @@ class ConversationSettingsViewController: OWSTableViewController {
             #endif
             actionSheet.addAction(ActionSheetAction(title: NSLocalizedString("CONVERSATION_SETTINGS_MUTE_ONE_HOUR_ACTION",
                                                                              comment: "Label for button to mute a thread for a hour."),
-                                                    accessibilityIdentifier: UIView.accessibilityIdentifier(in: self, name: "mute_1_hour"),
-                                                    style: .destructive) { [weak self] _ in
+                                                    accessibilityIdentifier: UIView.accessibilityIdentifier(in: self, name: "mute_1_hour")) { [weak self] _ in
                                                         self?.setThreadMuted {
                                                             var dateComponents = DateComponents()
                                                             dateComponents.hour = 1
                                                             return dateComponents
                                                         }
             })
+            actionSheet.addAction(ActionSheetAction(title: NSLocalizedString("CONVERSATION_SETTINGS_MUTE_EIGHT_HOUR_ACTION",
+                                                                             comment: "Label for button to mute a thread for eight hours."),
+                                                    accessibilityIdentifier: UIView.accessibilityIdentifier(in: self, name: "mute_8_hour")) { [weak self] _ in
+                                                        self?.setThreadMuted {
+                                                            var dateComponents = DateComponents()
+                                                            dateComponents.hour = 8
+                                                            return dateComponents
+                                                        }
+            })
             actionSheet.addAction(ActionSheetAction(title: NSLocalizedString("CONVERSATION_SETTINGS_MUTE_ONE_DAY_ACTION",
                                                                              comment: "Label for button to mute a thread for a day."),
-                                                    accessibilityIdentifier: UIView.accessibilityIdentifier(in: self, name: "mute_1_day"),
-                                                    style: .destructive) { [weak self] _ in
+                                                    accessibilityIdentifier: UIView.accessibilityIdentifier(in: self, name: "mute_1_day")) { [weak self] _ in
                                                         self?.setThreadMuted {
                                                             var dateComponents = DateComponents()
                                                             dateComponents.day = 1
@@ -892,23 +823,17 @@ class ConversationSettingsViewController: OWSTableViewController {
             })
             actionSheet.addAction(ActionSheetAction(title: NSLocalizedString("CONVERSATION_SETTINGS_MUTE_ONE_WEEK_ACTION",
                                                                              comment: "Label for button to mute a thread for a week."),
-                                                    accessibilityIdentifier: UIView.accessibilityIdentifier(in: self, name: "mute_1_week"),
-                                                    style: .destructive) { [weak self] _ in
+                                                    accessibilityIdentifier: UIView.accessibilityIdentifier(in: self, name: "mute_1_week")) { [weak self] _ in
                                                         self?.setThreadMuted {
                                                             var dateComponents = DateComponents()
                                                             dateComponents.day = 7
                                                             return dateComponents
                                                         }
             })
-            actionSheet.addAction(ActionSheetAction(title: NSLocalizedString("CONVERSATION_SETTINGS_MUTE_ONE_YEAR_ACTION",
-                                                                             comment: "Label for button to mute a thread for a year."),
-                                                    accessibilityIdentifier: UIView.accessibilityIdentifier(in: self, name: "mute_1_year"),
-                                                    style: .destructive) { [weak self] _ in
-                                                        self?.setThreadMuted {
-                                                            var dateComponents = DateComponents()
-                                                            dateComponents.year = 1
-                                                            return dateComponents
-                                                        }
+            actionSheet.addAction(ActionSheetAction(title: NSLocalizedString("CONVERSATION_SETTINGS_MUTE_ALWAYS_ACTION",
+                                                                             comment: "Label for button to mute a thread forever."),
+                                                    accessibilityIdentifier: UIView.accessibilityIdentifier(in: self, name: "mute_always")) { [weak self] _ in
+                self?.setThreadMutedUntilTimestamp(TSThread.alwaysMutedTimestamp)
             })
         }
 
@@ -928,12 +853,12 @@ class ConversationSettingsViewController: OWSTableViewController {
             owsFailDebug("Couldn't modify date.")
             return
         }
-        self.setThreadMutedUntilDate(mutedUntilDate)
+        self.setThreadMutedUntilTimestamp(mutedUntilDate.ows_millisecondsSince1970)
     }
 
-    private func setThreadMutedUntilDate(_ value: Date?) {
+    private func setThreadMutedUntilTimestamp(_ value: UInt64) {
         databaseStorage.write { transaction in
-            self.thread.updateWithMuted(until: value, transaction: transaction)
+            self.thread.updateWithMuted(untilTimestamp: value, updateStorageService: true, transaction: transaction)
         }
 
         updateTableContents()
@@ -1077,8 +1002,8 @@ extension ConversationSettingsViewController: ColorPickerDelegate {
             self.thread.updateConversationColorName(conversationColor.name, transaction: transaction)
         }
 
-        contactsManager.removeAllFromAvatarCache()
-        contactsManager.clearColorNameCache()
+        contactsManagerImpl.removeAllFromAvatarCache()
+        contactsManagerImpl.clearColorNameCache()
         updateTableContents()
         conversationSettingsViewDelegate?.conversationColorWasUpdated()
 

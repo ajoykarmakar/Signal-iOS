@@ -5,7 +5,7 @@
 import Foundation
 import PromiseKit
 
-public class CVComponentState: Equatable {
+public class CVComponentState: Equatable, Dependencies {
     let messageCellType: CVMessageCellType
 
     // TODO: Can/should we eliminate/populate this?
@@ -573,22 +573,6 @@ extension CVComponentState {
 
 fileprivate extension CVComponentState.Builder {
 
-    // MARK: - Dependencies
-
-    private var contactsManager: OWSContactsManager {
-        return Environment.shared.contactsManager
-    }
-
-    private static var contactsManager: OWSContactsManager {
-        return Environment.shared.contactsManager
-    }
-
-    private static var databaseStorage: SDSDatabaseStorage {
-        return .shared
-    }
-
-    // MARK: -
-
     mutating func populateAndBuild() throws -> CVComponentState {
 
         if let reactionState = InteractionReactionState(interaction: interaction,
@@ -743,7 +727,8 @@ fileprivate extension CVComponentState.Builder {
             }
         }
 
-        if let linkPreview = message.linkPreview {
+        if !threadViewModel.hasPendingMessageRequest,
+           let linkPreview = message.linkPreview {
             try buildLinkPreview(message: message, linkPreview: linkPreview)
         }
 
@@ -971,34 +956,34 @@ fileprivate extension CVComponentState.Builder {
                     owsFailDebug("Invalid attachment.")
                 }
                 mediaAlbumItems.append(CVMediaAlbumItem(attachment: attachment,
-                                                                  attachmentStream: nil,
-                                                                  caption: caption,
-                                                                  mediaSize: mediaSize))
+                                                        attachmentStream: nil,
+                                                        caption: caption,
+                                                        mediaSize: mediaSize))
                 continue
             }
 
             guard attachmentStream.isValidVisualMedia else {
                 Logger.warn("Filtering invalid media.")
                 mediaAlbumItems.append(CVMediaAlbumItem(attachment: attachment,
-                                                                  attachmentStream: nil,
-                                                                  caption: caption,
-                                                                  mediaSize: .zero))
+                                                        attachmentStream: nil,
+                                                        caption: caption,
+                                                        mediaSize: .zero))
                 continue
             }
             let mediaSize = attachmentStream.imageSize()
             if mediaSize.width <= 0 || mediaSize.height <= 0 {
                 Logger.warn("Filtering media with invalid size.")
                 mediaAlbumItems.append(CVMediaAlbumItem(attachment: attachment,
-                                                                  attachmentStream: nil,
-                                                                  caption: caption,
-                                                                  mediaSize: .zero))
+                                                        attachmentStream: nil,
+                                                        caption: caption,
+                                                        mediaSize: .zero))
                 continue
             }
 
             mediaAlbumItems.append(CVMediaAlbumItem(attachment: attachment,
-                                                              attachmentStream: attachmentStream,
-                                                              caption: caption,
-                                                              mediaSize: mediaSize))
+                                                    attachmentStream: attachmentStream,
+                                                    caption: caption,
+                                                    mediaSize: mediaSize))
         }
         return mediaAlbumItems
     }

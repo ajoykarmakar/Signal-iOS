@@ -6,7 +6,7 @@ import Foundation
 
 public enum MessageRecipient: Equatable {
     case contact(_ address: SignalServiceAddress)
-    case group(_ groupThread: TSGroupThread)
+    case group(_ groupThreadId: String)
 }
 
 public protocol ConversationItem {
@@ -15,6 +15,8 @@ public protocol ConversationItem {
     var image: UIImage? { get }
     var isBlocked: Bool { get }
     var disappearingMessagesConfig: OWSDisappearingMessagesConfiguration? { get }
+
+    func thread(transaction: SDSAnyWriteTransaction) -> TSThread?
 }
 
 struct RecentConversationItem {
@@ -54,9 +56,13 @@ extension RecentConversationItem: ConversationItem {
     var disappearingMessagesConfig: OWSDisappearingMessagesConfiguration? {
         return unwrapped.disappearingMessagesConfig
     }
+
+    func thread(transaction: SDSAnyWriteTransaction) -> TSThread? {
+        return unwrapped.thread(transaction: transaction)
+    }
 }
 
-struct ContactConversationItem {
+struct ContactConversationItem: Dependencies {
     let address: SignalServiceAddress
     let isBlocked: Bool
     let disappearingMessagesConfig: OWSDisappearingMessagesConfiguration?
@@ -65,28 +71,12 @@ struct ContactConversationItem {
 }
 
 extension ContactConversationItem: Comparable {
-    static var contactsManager: OWSContactsManager {
-        return Environment.shared.contactsManager
-    }
-
     public static func < (lhs: ContactConversationItem, rhs: ContactConversationItem) -> Bool {
         return lhs.comparableName < rhs.comparableName
     }
 }
 
 extension ContactConversationItem: ConversationItem {
-
-    // MARK: - Dependencies
-
-    var contactsManager: OWSContactsManager {
-        return Environment.shared.contactsManager
-    }
-
-    var databaseStorage: SDSDatabaseStorage {
-        return SDSDatabaseStorage.shared
-    }
-
-    // MARK: -
 
     var messageRecipient: MessageRecipient {
         return .contact(address)
@@ -102,31 +92,49 @@ extension ContactConversationItem: ConversationItem {
 
     var image: UIImage? {
         return databaseStorage.uiRead { transaction in
-            return self.contactsManager.image(for: self.address, transaction: transaction)
+            return self.contactsManagerImpl.image(for: self.address, transaction: transaction)
         }
+    }
+
+    func thread(transaction: SDSAnyWriteTransaction) -> TSThread? {
+        return TSContactThread.getOrCreateThread(withContactAddress: address, transaction: transaction)
     }
 }
 
-struct GroupConversationItem {
-    let groupThread: TSGroupThread
+struct GroupConversationItem: Dependencies {
+    let groupThreadId: String
     let isBlocked: Bool
     let disappearingMessagesConfig: OWSDisappearingMessagesConfiguration?
 
-    var groupModel: TSGroupModel {
-        return groupThread.groupModel
+    func thread(transaction: SDSAnyWriteTransaction) -> TSThread? {
+        return TSGroupThread.anyFetchGroupThread(uniqueId: groupThreadId, transaction: transaction)
+    }
+
+    // We don't want to keep this in memory, because the group model
+    // can be very large.
+    var groupThread: TSGroupThread? {
+        return databaseStorage.uiRead { transaction in
+            return TSGroupThread.anyFetchGroupThread(uniqueId: groupThreadId, transaction: transaction)
+        }
+    }
+
+    var groupModel: TSGroupModel? {
+        return groupThread?.groupModel
     }
 }
 
 extension GroupConversationItem: ConversationItem {
     var messageRecipient: MessageRecipient {
-        return .group(groupThread)
+        return .group(groupThreadId)
     }
 
     var title: String {
+        guard let groupThread = groupThread else { return TSGroupThread.defaultGroupName }
         return groupThread.groupNameOrDefault
     }
 
     var image: UIImage? {
+        guard let groupThread = groupThread else { return nil }
         return OWSAvatarBuilder.buildImage(thread: groupThread, diameter: kStandardAvatarSize)
     }
 }

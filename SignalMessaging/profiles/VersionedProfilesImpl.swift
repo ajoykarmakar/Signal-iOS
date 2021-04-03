@@ -27,26 +27,6 @@ public class VersionedProfileRequestImpl: NSObject, VersionedProfileRequest {
 @objc
 public class VersionedProfilesImpl: NSObject, VersionedProfilesSwift {
 
-    // MARK: - Dependencies
-
-    private var profileManager: OWSProfileManager {
-        return OWSProfileManager.shared()
-    }
-
-    private var networkManager: TSNetworkManager {
-        return SSKEnvironment.shared.networkManager
-    }
-
-    private var databaseStorage: SDSDatabaseStorage {
-        return SDSDatabaseStorage.shared
-    }
-
-    private var tsAccountManager: TSAccountManager {
-        return .shared()
-    }
-
-    // MARK: -
-
     public static let credentialStore = SDSKeyValueStore(collection: "VersionedProfiles.credentialStore")
 
     // MARK: -
@@ -57,49 +37,23 @@ public class VersionedProfilesImpl: NSObject, VersionedProfilesSwift {
 
     // MARK: - Update
 
-    @objc
-    public func updateProfileOnService(profileGivenName: String?,
-                                       profileFamilyName: String?,
-                                       profileBio: String?,
-                                       profileBioEmoji: String?,
-                                       profileAvatarData: Data?) {
-        firstly {
-            updateProfilePromise(profileGivenName: profileGivenName,
-                                 profileFamilyName: profileFamilyName,
-                                 profileBio: profileBio,
-                                 profileBioEmoji: profileBioEmoji,
-                                 profileAvatarData: profileAvatarData)
-        }.done { _ in
-            Logger.verbose("success")
-
-            // TODO: This is temporary for testing.
-            let localAddress = TSAccountManager.shared().localAddress!
-            firstly {
-                ProfileFetcherJob.fetchProfilePromise(address: localAddress,
-                                                      mainAppOnly: false,
-                                                      ignoreThrottling: true,
-                                                      fetchType: .versioned)
-            }.done { _ in
-                    Logger.verbose("success")
-            }.catch { error in
-                owsFailDebug("error: \(error)")
-            }
-        }.catch { error in
-            owsFailDebug("error: \(error)")
-        }
-    }
-
     public func updateProfilePromise(profileGivenName: String?,
                                      profileFamilyName: String?,
                                      profileBio: String?,
                                      profileBioEmoji: String?,
-                                     profileAvatarData: Data?) -> Promise<VersionedProfileUpdate> {
+                                     profileAvatarData: Data?,
+                                     unsavedRotatedProfileKey: OWSAES256Key?) -> Promise<VersionedProfileUpdate> {
 
         return DispatchQueue.global().async(.promise) {
             guard let localUuid = self.tsAccountManager.localUuid else {
                 throw OWSAssertionError("Missing localUuid.")
             }
-            let profileKey: OWSAES256Key = self.profileManager.localProfileKey()
+
+            if unsavedRotatedProfileKey != nil {
+                Logger.info("Updating local profile with unsaved rotated profile key")
+            }
+
+            let profileKey: OWSAES256Key = unsavedRotatedProfileKey ?? self.profileManager.localProfileKey()
             return (localUuid, profileKey)
         }.then(on: DispatchQueue.global()) { (localUuid: UUID, profileKey: OWSAES256Key) -> Promise<TSNetworkManager.Response> in
             let localProfileKey = try self.parseProfileKey(profileKey: profileKey)
@@ -253,7 +207,8 @@ public class VersionedProfilesImpl: NSObject, VersionedProfilesSwift {
                 owsFailDebug("Invalid credential response.")
                 return
             }
-            guard let uuid = profile.address.uuid else {
+            let address = profile.address
+            guard let uuid = address.uuid else {
                 owsFailDebug("Missing uuid.")
                 return
             }
@@ -270,8 +225,26 @@ public class VersionedProfilesImpl: NSObject, VersionedProfilesSwift {
                 return
             }
 
-            Logger.verbose("Updating credential for: \(uuid)")
+            guard let requestProfileKey = profileRequest.profileKey else {
+                owsFailDebug("Missing profile key for credential from versioned profile fetch.")
+                return
+            }
+
             databaseStorage.write { transaction in
+                guard let currentProfileKey = profileManager.profileKey(for: address, transaction: transaction) else {
+                    owsFailDebug("Missing profile key in database.")
+                    return
+                }
+                guard requestProfileKey.keyData == currentProfileKey.keyData else {
+                    if DebugFlags.internalLogging {
+                        Logger.info("requestProfileKey: \(requestProfileKey.keyData.hexadecimalString) != currentProfileKey: \(currentProfileKey.keyData.hexadecimalString)")
+                    }
+                    owsFailDebug("Profile key for versioned profile fetch does not match current profile key.")
+                    return
+                }
+
+                Logger.verbose("Updating credential for: \(uuid)")
+
                 Self.credentialStore.setData(credentialData, key: uuid.uuidString, transaction: transaction)
             }
         } catch {
@@ -288,6 +261,7 @@ public class VersionedProfilesImpl: NSObject, VersionedProfilesSwift {
             let uuid = address.uuid else {
                 throw OWSAssertionError("Invalid address: \(address)")
         }
+
         return Self.credentialStore.getData(uuid.uuidString, transaction: transaction)
     }
 

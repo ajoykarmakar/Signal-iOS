@@ -1,22 +1,13 @@
 //
-//  Copyright (c) 2020 Open Whisper Systems. All rights reserved.
+//  Copyright (c) 2021 Open Whisper Systems. All rights reserved.
 //
 
 import Foundation
 
-extension TSGroupThread {
-
-    // MARK: - Dependencies
-
-    private static var groupsV2: GroupsV2Swift {
-        return SSKEnvironment.shared.groupsV2 as! GroupsV2Swift
-    }
-}
-
-// MARK: -
-
 @objc
 public extension TSGroupThread {
+
+    var groupId: Data { groupModel.groupId }
 
     var groupMembership: GroupMembership {
         groupModel.groupMembership

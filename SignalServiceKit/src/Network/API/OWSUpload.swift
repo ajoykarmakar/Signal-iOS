@@ -1,5 +1,5 @@
 //
-//  Copyright (c) 2020 Open Whisper Systems. All rights reserved.
+//  Copyright (c) 2021 Open Whisper Systems. All rights reserved.
 //
 
 import Foundation
@@ -37,22 +37,6 @@ public class OWSUpload: NSObject {
 // MARK: -
 
 fileprivate extension OWSUpload {
-
-    // MARK: - Dependencies
-
-    static var socketManager: TSSocketManager {
-        return SSKEnvironment.shared.socketManager
-    }
-
-    static var networkManager: TSNetworkManager {
-        return SSKEnvironment.shared.networkManager
-    }
-
-    static var signalService: OWSSignalService {
-        return OWSSignalService.shared()
-    }
-
-    // MARK: -
 
     static var cdn0SessionManager: AFHTTPSessionManager {
         signalService.sessionManagerForCdn(cdnNumber: 0)
@@ -143,6 +127,11 @@ public class OWSAttachmentUploadV2: NSObject {
 
             self.encryptionKey = encryptionKey
             self.digest = digest
+
+            guard attachmentData.count <= OWSMediaUtils.kMaxFileSizeGeneric,
+                  encryptedAttachmentData.count <= OWSMediaUtils.kMaxAttachmentUploadSizeBytes else {
+                throw OWSAssertionError("Data is too large: \(encryptedAttachmentData.count).").asUnretryableError
+            }
 
             return encryptedAttachmentData
         }
@@ -447,7 +436,7 @@ public class OWSAttachmentUploadV2: NSObject {
             let urlSession = OWSUpload.cdnUrlSession(forCdnNumber: form.cdnNumber)
 
             // Wrap the progress block.
-            let progressBlock = { (task: URLSessionTask, progress: Progress) in
+            let progressBlock = { (_: URLSessionTask, progress: Progress) in
                 // Total progress is (progress from previous attempts/slices +
                 // progress from this attempt/slice).
                 let totalCompleted: Int = bytesAlreadyUploaded + Int(progress.completedUnitCount)

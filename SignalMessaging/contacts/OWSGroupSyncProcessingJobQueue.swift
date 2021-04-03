@@ -29,7 +29,7 @@ public class IncomingGroupSyncJobQueue: NSObject, JobQueue {
     public override init() {
         super.init()
 
-        AppReadiness.runNowOrWhenAppDidBecomeReadyPolite {
+        AppReadiness.runNowOrWhenAppDidBecomeReadyAsync {
             self.setup()
         }
     }
@@ -80,20 +80,6 @@ public class IncomingGroupSyncOperation: OWSOperation, DurableOperation {
 
     init(jobRecord: OWSIncomingGroupSyncJobRecord) {
         self.jobRecord = jobRecord
-    }
-
-    // MARK: - Dependencies
-
-    var databaseStorage: SDSDatabaseStorage {
-        return SSKEnvironment.shared.databaseStorage
-    }
-
-    var attachmentDownloads: OWSAttachmentDownloads {
-        return SSKEnvironment.shared.attachmentDownloads
-    }
-
-    var blockingManager: OWSBlockingManager {
-        return .shared()
     }
 
     // MARK: - Durable Operation Overrides

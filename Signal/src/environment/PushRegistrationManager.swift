@@ -1,5 +1,5 @@
 //
-//  Copyright (c) 2020 Open Whisper Systems. All rights reserved.
+//  Copyright (c) 2021 Open Whisper Systems. All rights reserved.
 //
 
 import Foundation
@@ -18,25 +18,6 @@ public enum PushRegistrationError: Error {
  * Singleton used to integrate with push notification services - registration and routing received remote notifications.
  */
 @objc public class PushRegistrationManager: NSObject, PKPushRegistryDelegate {
-
-    // MARK: - Dependencies
-
-    private var messageFetcherJob: MessageFetcherJob {
-        return SSKEnvironment.shared.messageFetcherJob
-    }
-
-    private var notificationPresenter: NotificationPresenter {
-        return AppEnvironment.shared.notificationPresenter
-    }
-
-    // MARK: - Singleton class
-
-    @objc
-    public static var shared: PushRegistrationManager {
-        get {
-            return AppEnvironment.shared.pushRegistrationManager
-        }
-    }
 
     override init() {
         super.init()
@@ -102,7 +83,7 @@ public enum PushRegistrationError: Error {
     public func pushRegistry(_ registry: PKPushRegistry, didReceiveIncomingPushWith payload: PKPushPayload, for type: PKPushType) {
         Logger.info("")
         assert(type == .voIP)
-        AppReadiness.runNowOrWhenAppDidBecomeReady {
+        AppReadiness.runNowOrWhenAppDidBecomeReadySync {
             AssertIsOnMainThread()
             if let preauthChallengeResolver = self.preauthChallengeResolver,
                 let challenge = payload.dictionaryPayload["challenge"] as? String {

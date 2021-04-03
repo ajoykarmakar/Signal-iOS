@@ -1,5 +1,5 @@
 //
-//  Copyright (c) 2020 Open Whisper Systems. All rights reserved.
+//  Copyright (c) 2021 Open Whisper Systems. All rights reserved.
 //
 
 import Foundation
@@ -11,7 +11,7 @@ protocol ReplaceAdminViewControllerDelegate: class {
 
 // MARK: -
 
-class ReplaceAdminViewController: OWSTableViewController {
+class ReplaceAdminViewController: OWSTableViewController2 {
 
     weak var replaceAdminViewControllerDelegate: ReplaceAdminViewControllerDelegate?
 
@@ -36,9 +36,6 @@ class ReplaceAdminViewController: OWSTableViewController {
         title = NSLocalizedString("REPLACE_ADMIN_VIEW_TITLE",
                                   comment: "The title for the 'replace group admin' view.")
 
-        self.useThemeBackgroundColors = true
-        tableView.separatorColor = .clear
-
         updateTableContents()
     }
 
@@ -48,7 +45,7 @@ class ReplaceAdminViewController: OWSTableViewController {
         let section = OWSTableSection()
 
         let sortedCandidates = databaseStorage.uiRead { transaction in
-            self.contactsManager.sortSignalServiceAddresses(Array(self.candidates), transaction: transaction)
+            self.contactsManagerImpl.sortSignalServiceAddresses(Array(self.candidates), transaction: transaction)
         }
         for address in sortedCandidates {
             section.add(OWSTableItem(customCellBlock: {

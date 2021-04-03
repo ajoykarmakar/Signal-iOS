@@ -1,5 +1,5 @@
 //
-//  Copyright (c) 2020 Open Whisper Systems. All rights reserved.
+//  Copyright (c) 2021 Open Whisper Systems. All rights reserved.
 //
 
 import Foundation
@@ -12,38 +12,6 @@ let kEphemeralPreKeysMinimumCount: UInt = 35
 @objc(SSKRefreshPreKeysOperation)
 public class RefreshPreKeysOperation: OWSOperation {
 
-    // MARK: - Dependencies
-
-    private var tsAccountManager: TSAccountManager {
-        return TSAccountManager.shared()
-    }
-
-    private var accountServiceClient: AccountServiceClient {
-        return SSKEnvironment.shared.accountServiceClient
-    }
-
-    private var signedPreKeyStore: SSKSignedPreKeyStore {
-        return SSKEnvironment.shared.signedPreKeyStore
-    }
-
-    private var preKeyStore: SSKPreKeyStore {
-        return SSKEnvironment.shared.preKeyStore
-    }
-
-    private var identityKeyManager: OWSIdentityManager {
-        return OWSIdentityManager.shared()
-    }
-
-    private var databaseStorage: SDSDatabaseStorage {
-        return SDSDatabaseStorage.shared
-    }
-
-    private var messageProcessing: MessageProcessing {
-        return SSKEnvironment.shared.messageProcessing
-    }
-
-    // MARK: -
-
     public override func run() {
         Logger.debug("")
 
@@ -53,7 +21,7 @@ public class RefreshPreKeysOperation: OWSOperation {
         }
 
         firstly(on: .global()) { () -> Promise<Void> in
-            self.messageProcessing.flushMessageFetchingAndDecryptionPromise()
+            self.messageProcessor.fetchingAndProcessingCompletePromise()
         }.then(on: .global()) { () -> Promise<Int> in
             self.accountServiceClient.getPreKeysCount()
         }.then(on: .global()) { (preKeysCount: Int) -> Promise<Void> in
@@ -63,7 +31,7 @@ public class RefreshPreKeysOperation: OWSOperation {
                 return Promise.value(())
             }
 
-            let identityKey: Data = self.identityKeyManager.identityKeyPair()!.publicKey
+            let identityKey: Data = self.identityManager.identityKeyPair()!.publicKey
             let signedPreKeyRecord: SignedPreKeyRecord = self.signedPreKeyStore.generateRandomSignedRecord()
             let preKeyRecords: [PreKeyRecord] = self.preKeyStore.generatePreKeyRecords()
 

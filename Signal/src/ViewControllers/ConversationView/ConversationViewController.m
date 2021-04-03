@@ -646,7 +646,7 @@ typedef enum : NSUInteger {
 
     // We should have already requested contact access at this point, so this should be a no-op
     // unless it ever becomes possible to load this VC without going via the ConversationListViewController.
-    [self.contactsManager requestSystemContactsOnce];
+    [self.contactsManagerImpl requestSystemContactsOnce];
 
     [self updateBarButtonItems];
     [self updateNavigationTitle];
@@ -669,9 +669,10 @@ typedef enum : NSUInteger {
 
 - (void)setUserHasScrolled:(BOOL)userHasScrolled
 {
-    _userHasScrolled = userHasScrolled;
-
-    [self ensureBannerState];
+    if (_userHasScrolled != userHasScrolled) {
+        _userHasScrolled = userHasScrolled;
+        [self ensureBannerState];
+    }
 }
 
 // Returns a collection of the group members who are "no longer verified".
@@ -767,7 +768,7 @@ typedef enum : NSUInteger {
 
         UIView *_Nullable droppedGroupMembersBanner;
         droppedGroupMembersBanner = [self createDroppedGroupMembersBannerIfNecessaryWithViewState:self.viewState];
-        if (droppedGroupMembersBanner != nil) {
+        if (droppedGroupMembersBanner != nil && !self.viewState.isDroppedGroupMembersBannerHidden) {
             [banners addObject:droppedGroupMembersBanner];
         }
     }
@@ -776,6 +777,12 @@ typedef enum : NSUInteger {
     messageRequestNameCollisionBanner = [self createMessageRequestNameCollisionBannerIfNecessaryWithViewState:self.viewState];
     if (messageRequestNameCollisionBanner != nil) {
         [banners addObject:messageRequestNameCollisionBanner];
+    }
+
+    UIView *_Nullable groupMembershipNameCollisionBanner;
+    groupMembershipNameCollisionBanner = [self createGroupMembershipCollisionBannerIfNecessary];
+    if (groupMembershipNameCollisionBanner != nil) {
+        [banners addObject:groupMembershipNameCollisionBanner];
     }
 
     if (banners.count < 1) {
@@ -1014,8 +1021,12 @@ typedef enum : NSUInteger {
         case ConversationViewActionGroupCallLobby:
             [self showGroupLobbyOrActiveCall];
             break;
-        case ConversationViewActionNewGroupActionSheet:
+        case ConversationViewActionNewGroupActionSheet: {
             dispatch_async(dispatch_get_main_queue(), ^{ [self showGroupLinkPromotionActionSheet]; });
+            break;
+        }
+        case ConversationViewActionUpdateDraft:
+            // Do nothing; input toolbar was just created with the latest draft.
             break;
     }
 
@@ -1071,7 +1082,7 @@ typedef enum : NSUInteger {
     self.isViewVisible = NO;
     self.shouldAnimateKeyboardChanges = NO;
 
-    [self.audioPlayer stopAll];
+    [self.cvAudioPlayer stopAll];
 
     [self cancelReadTimer];
     [self saveDraft];
@@ -1125,7 +1136,7 @@ typedef enum : NSUInteger {
         }
 
         // If the user is in the system contacts, show a badge
-        if ([self.contactsManager hasSignalAccountForAddress:thread.contactAddress]) {
+        if ([self.contactsManagerImpl hasSignalAccountForAddress:thread.contactAddress]) {
             icon =
                 [[UIImage imageNamed:@"contact-outline-16"] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
         }
@@ -1446,7 +1457,10 @@ typedef enum : NSUInteger {
 {
     if (self.thread.isGroupV2Thread) {
         TSGroupThread *groupThread = (TSGroupThread *)self.thread;
-        [self.callService peekCallAndUpdateThread:groupThread];
+        // We dispatch async in an effort to avoid "bad food" crashes when
+        // presenting the view. peekCallAndUpdateThread() uses a write
+        // transaction.
+        dispatch_async(dispatch_get_main_queue(), ^{ [self.callService peekCallAndUpdateThread:groupThread]; });
     }
 }
 
@@ -2159,7 +2173,7 @@ typedef enum : NSUInteger {
         SystemSoundID soundId = [OWSSounds systemSoundIDForSound:OWSStandardSound_MessageSent quiet:YES];
         AudioServicesPlaySystemSound(soundId);
     }
-    [self.typingIndicators didSendOutgoingMessageInThread:self.thread];
+    [self.typingIndicatorsImpl didSendOutgoingMessageInThread:self.thread];
 }
 
 #pragma mark UIDocumentMenuDelegate
@@ -2487,7 +2501,7 @@ typedef enum : NSUInteger {
     OWSLogInfo(@"startRecordingVoiceMemo");
 
     // Cancel any ongoing audio playback.
-    [self.audioPlayer stopAll];
+    [self.cvAudioPlayer stopAll];
 
     NSString *temporaryDirectory = OWSTemporaryDirectory();
     NSString *filename = [NSString stringWithFormat:@"%lld.m4a", [NSDate ows_millisecondTimeStamp]];
@@ -2798,7 +2812,7 @@ typedef enum : NSUInteger {
 - (void)textViewDidChange:(UITextView *)textView
 {
     if (textView.text.length > 0) {
-        [self.typingIndicators didStartTypingOutgoingInputInThread:self.thread];
+        [self.typingIndicatorsImpl didStartTypingOutgoingInputInThread:self.thread];
     }
 }
 
@@ -2996,9 +3010,7 @@ typedef enum : NSUInteger {
     [self dismissViewControllerAnimated:YES completion:nil];
 
     // We always want to scroll to the bottom of the conversation after the local user
-    // sends a message.  Normally, this is taken care of in yapDatabaseModified:, but
-    // we don't listen to db modifications when this view isn't visible, i.e. when the
-    // attachment approval view is presented.
+    // sends a message.
     [self scrollToBottomOfConversationAnimated:NO];
 }
 
@@ -3591,7 +3603,7 @@ typedef enum : NSUInteger {
         if (avatarImageData) {
             break;
         }
-        avatarImageData = [self.contactsManager profileImageDataForAddressWithSneakyTransaction:address];
+        avatarImageData = [self.contactsManagerImpl profileImageDataForAddressWithSneakyTransaction:address];
         if (avatarImageData) {
             isProfileAvatar = YES;
         }
@@ -3819,10 +3831,15 @@ typedef enum : NSUInteger {
 - (void)traitCollectionDidChange:(nullable UITraitCollection *)previousTraitCollection
 {
     [super traitCollectionDidChange:previousTraitCollection];
-
-    [self ensureBannerState];
     [self updateBarButtonItems];
     [self updateNavigationBarSubtitleLabel];
+
+    // Invoking -ensureBannerState synchronously can lead to reenterant updates to the
+    // trait collection while building the banners. This can lead us to blow out the stack
+    // on unrelated trait collection changes (e.g. rotating to landscape).
+    // We workaround this by just asyncing any banner updates to break the synchronous
+    // dependency chain.
+    dispatch_async(dispatch_get_main_queue(), ^{ [self ensureBannerState]; });
 }
 
 - (void)resetForSizeOrOrientationChange
@@ -3914,6 +3931,10 @@ typedef enum : NSUInteger {
 
 - (void)handleKeyboardStateChange:(NSTimeInterval)animationDuration animationCurve:(UIViewAnimationCurve)animationCurve
 {
+    if (self.isInteractiveTransitionInProgress) {
+        return;
+    }
+
     if (self.shouldAnimateKeyboardChanges && animationDuration > 0) {
         // The animation curve provided by the keyboard notifications
         // is a private value not represented in UIViewAnimationOptions.
@@ -4039,7 +4060,7 @@ typedef enum : NSUInteger {
 {
     OWSAssertIsOnMainThread();
 
-    if (!self.contactsManager.supportsContactEditing) {
+    if (!self.contactsManagerImpl.supportsContactEditing) {
         OWSFailDebug(@"Contact editing unexpectedly unsupported");
         return;
     }
@@ -4316,8 +4337,7 @@ typedef enum : NSUInteger {
     [self presentViewController:pageVC animated:YES completion:nil];
 }
 
-- (void)cvc_didTapGenericAttachment:(CVComponentGenericAttachment *_Nonnull)attachment
-                    inComponentView:(id <CVComponentView> _Nonnull)componentView
+- (CVAttachmentTapAction)cvc_didTapGenericAttachment:(CVComponentGenericAttachment *_Nonnull)attachment
 {
     OWSAssertIsOnMainThread();
 
@@ -4325,8 +4345,9 @@ typedef enum : NSUInteger {
         QLPreviewController *previewController = [[QLPreviewController alloc] init];
         previewController.dataSource = attachment;
         [self presentViewController:previewController animated:YES completion:nil];
+        return CVAttachmentTapActionHandledByDelegate;
     } else {
-        [attachment showShareUIFromView:componentView.rootView];
+        return CVAttachmentTapActionDefault;
     }
 }
 
@@ -4429,6 +4450,16 @@ typedef enum : NSUInteger {
     [actionSheet presentFromViewController:self];
 }
 
+- (void)cvc_didTapShowMessageDetail:(CVItemViewModelImpl *)itemViewModel
+{
+    [self showDetailView:itemViewModel];
+}
+
+- (void)cvc_prepareMessageDetailForInteractivePresentation:(CVItemViewModelImpl *)itemViewModel
+{
+    [self prepareDetailViewForInteractivePresentation:itemViewModel];
+}
+
 #pragma mark - Selection
 
 // TODO: Move these methods to +Selection.swift
@@ -4451,7 +4482,7 @@ typedef enum : NSUInteger {
 
 #pragma mark - System Cell
 
-- (void)cvc_didTapNonBlockingIdentityChange:(SignalServiceAddress *)address
+- (void)cvc_didTapPreviouslyVerifiedIdentityChange:(SignalServiceAddress *)address
 {
     OWSAssertIsOnMainThread();
 
@@ -4470,6 +4501,50 @@ typedef enum : NSUInteger {
     }
 
     [self showFingerprintWithAddress:address];
+}
+
+- (void)cvc_didTapUnverifiedIdentityChange:(SignalServiceAddress *)address
+{
+    OWSAssertIsOnMainThread();
+
+    OWSAssertDebug(address.isValid);
+
+    [self dismissKeyBoard];
+
+    UIImageView *headerImageView = [[UIImageView alloc] initWithImage:[UIImage imageNamed:@"safety-number-change"]];
+
+    UIView *headerView = [UIView new];
+    [headerView addSubview:headerImageView];
+    [headerImageView autoPinEdgeToSuperviewEdge:ALEdgeTop withInset:22];
+    [headerImageView autoPinEdgeToSuperviewEdge:ALEdgeBottom];
+    [headerImageView autoHCenterInSuperview];
+    [headerImageView autoSetDimension:ALDimensionWidth toSize:200];
+    [headerImageView autoSetDimension:ALDimensionHeight toSize:110];
+
+    NSString *displayName = [self.contactsManager displayNameForAddress:address];
+    NSString *messageFormat = NSLocalizedString(@"UNVERIFIED_SAFETY_NUMBER_CHANGE_DESCRIPTION_FORMAT",
+        @"Description for the unverified safety number change. Embeds {name of contact with identity change}");
+
+    ActionSheetController *actionSheet =
+        [[ActionSheetController alloc] initWithTitle:nil
+                                             message:[NSString stringWithFormat:messageFormat, displayName]];
+    actionSheet.customHeader = headerView;
+
+    __weak ConversationViewController *weakSelf = self;
+
+    ActionSheetAction *verifyAction = [[ActionSheetAction alloc]
+        initWithTitle:NSLocalizedString(@"UNVERIFIED_SAFETY_NUMBER_VERIFY_ACTION",
+                          @"Action to verify a safety number after it has changed")
+                style:ActionSheetActionStyleDefault
+              handler:^(ActionSheetAction *action) { [weakSelf showFingerprintWithAddress:address]; }];
+    [actionSheet addAction:verifyAction];
+
+    ActionSheetAction *notNowAction = [[ActionSheetAction alloc] initWithTitle:CommonStrings.notNowButton
+                                                                         style:ActionSheetActionStyleCancel
+                                                                       handler:^(ActionSheetAction *action) {}];
+    [actionSheet addAction:notNowAction];
+
+    [self presentActionSheet:actionSheet];
 }
 
 - (void)cvc_didTapInvalidIdentityKeyErrorMessage:(TSInvalidIdentityKeyErrorMessage *)errorMessage

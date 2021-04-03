@@ -91,15 +91,7 @@ private class ModelCacheAdapter<KeyType: AnyObject & Hashable, ValueType: BaseMo
 
 // MARK: -
 
-private class ModelReadCache<KeyType: AnyObject & Hashable, ValueType: BaseModel>: UIDatabaseSnapshotDelegate {
-
-    // MARK: - Dependencies
-
-    var databaseStorage: SDSDatabaseStorage {
-        return SSKEnvironment.shared.databaseStorage
-    }
-
-    // MARK: -
+private class ModelReadCache<KeyType: AnyObject & Hashable, ValueType: BaseModel>: UIDatabaseSnapshotDelegate, Dependencies {
 
     enum Mode {
         // * .uiRead caches are only accessed on the main thread.
@@ -168,14 +160,13 @@ private class ModelReadCache<KeyType: AnyObject & Hashable, ValueType: BaseModel
                                                    object: nil)
         case .uiRead:
             // uiRead caches are evacuated by observing storage changes.
-            AppReadiness.runNowOrWhenAppDidBecomeReady {
+            AppReadiness.runNowOrWhenAppDidBecomeReadySync {
                 AssertIsOnMainThread()
 
                 self.databaseStorage.appendUIDatabaseSnapshotDelegate(self)
                 self.isObservingUIDatabaseSnapshots = true
 
                 NotificationCenter.default.addObserver(forName: ModelReadCaches.evacuateAllModelCaches, object: nil, queue: nil) { [weak self] _ in
-                    AssertIsOnMainThread()
                     self?.evacuateCache()
                 }
             }
@@ -183,6 +174,9 @@ private class ModelReadCache<KeyType: AnyObject & Hashable, ValueType: BaseModel
     }
 
     fileprivate func evacuateCache() {
+        // This may execute on background threads. For now, this is OK
+        // because NSCache is thread safe, but if we ever do more work
+        // here we should re-evaluate.
         nsCache.removeAllObjects()
     }
 
@@ -395,7 +389,9 @@ private class ModelReadCache<KeyType: AnyObject & Hashable, ValueType: BaseModel
             return true
         }
         #if TESTABLE_BUILD
-        Logger.warn("Skipping cache for: \(address), \(cacheName)")
+        if !DebugFlags.reduceLogChatter {
+            Logger.warn("Skipping cache for: \(address), \(cacheName)")
+        }
         #endif
         return false
     }
@@ -412,8 +408,6 @@ private class ModelReadCache<KeyType: AnyObject & Hashable, ValueType: BaseModel
             return false
         }
         switch transaction.readTransaction {
-        case .yapRead:
-            return false
         case .grdbRead:
             return true
         }
@@ -571,14 +565,6 @@ extension ModelReadCache: ModelCache {}
 // MARK: -
 
 private class ModelReadCacheWrapper<KeyType: AnyObject & Hashable, ValueType: BaseModel> {
-
-    // MARK: - Dependencies
-
-    private var databaseStorage: SDSDatabaseStorage {
-        return SDSDatabaseStorage.shared
-    }
-
-    // MARK: -
 
     private let uiReadCache: ModelReadCache<KeyType, ValueType>
     private let readCache: ModelReadCache<KeyType, ValueType>
@@ -1117,11 +1103,6 @@ public class InstalledStickerCache: NSObject {
 @objc
 public class ModelReadCaches: NSObject {
     @objc
-    public static var shared: ModelReadCaches {
-        return SSKEnvironment.shared.modelReadCaches
-    }
-
-    @objc
     public required override init() {
         super.init()
 
@@ -1151,8 +1132,6 @@ public class ModelReadCaches: NSObject {
     fileprivate static let evacuateAllModelCaches = Notification.Name("EvacuateAllModelCaches")
 
     func evacuateAllCaches() {
-        DispatchSyncMainThreadSafe {
-            NotificationCenter.default.post(name: Self.evacuateAllModelCaches, object: nil)
-        }
+        NotificationCenter.default.post(name: Self.evacuateAllModelCaches, object: nil)
     }
 }

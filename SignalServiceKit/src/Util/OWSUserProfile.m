@@ -19,6 +19,8 @@ NS_ASSUME_NONNULL_BEGIN
 
 NSNotificationName const kNSNotificationNameProfileWhitelistDidChange = @"kNSNotificationNameProfileWhitelistDidChange";
 NSNotificationName const kNSNotificationNameLocalProfileDidChange = @"kNSNotificationNameLocalProfileDidChange";
+NSNotificationName const kNSNotificationNameLocalProfileKeyDidChange = @"kNSNotificationNameLocalProfileKeyDidChange";
+
 NSNotificationName const kNSNotificationNameOtherUsersProfileWillChange
     = @"kNSNotificationNameOtherUsersProfileWillChange";
 NSNotificationName const kNSNotificationNameOtherUsersProfileDidChange
@@ -55,45 +57,6 @@ NSUInteger const kUserProfileSchemaVersion = 1;
 #pragma mark -
 
 @implementation OWSUserProfile
-
-#pragma mark - Dependencies
-
-- (id<ProfileManagerProtocol>)profileManager
-{
-    return SSKEnvironment.shared.profileManager;
-}
-
-+ (id<ProfileManagerProtocol>)profileManager
-{
-    return SSKEnvironment.shared.profileManager;
-}
-
-- (id<StorageServiceManagerProtocol>)storageServiceManager
-{
-    return SSKEnvironment.shared.storageServiceManager;
-}
-
-- (UserProfileReadCache *)userProfileReadCache
-{
-    return SSKEnvironment.shared.modelReadCaches.userProfileReadCache;
-}
-
-- (TSAccountManager *)tsAccountManager
-{
-    return SSKEnvironment.shared.tsAccountManager;
-}
-
-+ (TSAccountManager *)tsAccountManager
-{
-    return SSKEnvironment.shared.tsAccountManager;
-}
-
-- (id<SyncManagerProtocol>)syncManager
-{
-    return SSKEnvironment.shared.syncManager;
-}
-
-#pragma mark -
 
 @synthesize avatarUrlPath = _avatarUrlPath;
 @synthesize avatarFileName = _avatarFileName;
@@ -395,6 +358,7 @@ NSUInteger const kUserProfileSchemaVersion = 1;
     // * Updating the profile updated the "latest" instance.
     __block BOOL didChange = NO;
     __block BOOL onlyAvatarChanged = NO;
+    __block BOOL profileKeyDidChange = NO;
 
     OWSUserProfile *_Nullable latestInstance =
         [OWSUserProfile anyFetchWithUniqueId:self.uniqueId transaction:transaction];
@@ -419,8 +383,8 @@ NSUInteger const kUserProfileSchemaVersion = 1;
 
                                    changeBlock(profile);
 
-                                   BOOL profileKeyDidChange = ![NSObject isNullableObject:profileKeyBefore.keyData
-                                                                                  equalTo:profile.profileKey.keyData];
+                                   profileKeyDidChange = ![NSObject isNullableObject:profileKeyBefore.keyData
+                                                                             equalTo:profile.profileKey.keyData];
                                    BOOL givenNameDidChange = ![NSObject isNullableObject:givenNameBefore
                                                                                  equalTo:profile.givenName];
                                    BOOL familyNameDidChange = ![NSObject isNullableObject:familyNameBefore
@@ -540,6 +504,13 @@ NSUInteger const kUserProfileSchemaVersion = 1;
                                           [self.syncManager syncLocalContact].catchInBackground(^(NSError *error) {
                                               OWSLogError(@"Error: %@", error);
                                           });
+                                      }
+
+                                      if (profileKeyDidChange) {
+                                          [[NSNotificationCenter defaultCenter]
+                                              postNotificationNameAsync:kNSNotificationNameLocalProfileKeyDidChange
+                                                                 object:nil
+                                                               userInfo:nil];
                                       }
 
                                       [[NSNotificationCenter defaultCenter]
@@ -965,7 +936,7 @@ NSUInteger const kUserProfileSchemaVersion = 1;
 
     [self reindexAssociatedModels:transaction];
 
-    [self.userProfileReadCache didInsertOrUpdateUserProfile:self transaction:transaction];
+    [self.modelReadCaches.userProfileReadCache didInsertOrUpdateUserProfile:self transaction:transaction];
 }
 
 - (void)anyDidUpdateWithTransaction:(SDSAnyWriteTransaction *)transaction
@@ -974,14 +945,14 @@ NSUInteger const kUserProfileSchemaVersion = 1;
 
     [self reindexAssociatedModels:transaction];
 
-    [self.userProfileReadCache didInsertOrUpdateUserProfile:self transaction:transaction];
+    [self.modelReadCaches.userProfileReadCache didInsertOrUpdateUserProfile:self transaction:transaction];
 }
 
 - (void)anyDidRemoveWithTransaction:(SDSAnyWriteTransaction *)transaction
 {
     [super anyDidRemoveWithTransaction:transaction];
 
-    [self.userProfileReadCache didRemoveUserProfile:self transaction:transaction];
+    [self.modelReadCaches.userProfileReadCache didRemoveUserProfile:self transaction:transaction];
 }
 
 - (void)reindexAssociatedModels:(SDSAnyWriteTransaction *)transaction

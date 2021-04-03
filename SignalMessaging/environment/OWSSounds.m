@@ -1,5 +1,5 @@
 //
-//  Copyright (c) 2020 Open Whisper Systems. All rights reserved.
+//  Copyright (c) 2021 Open Whisper Systems. All rights reserved.
 //
 
 #import "OWSSounds.h"
@@ -71,27 +71,6 @@ const NSUInteger OWSCustomSoundShift = 16;
 
 @implementation OWSSounds
 
-#pragma mark - Dependencies
-
-+ (SDSDatabaseStorage *)databaseStorage
-{
-    return SDSDatabaseStorage.shared;
-}
-
-- (SDSDatabaseStorage *)databaseStorage
-{
-    return SDSDatabaseStorage.shared;
-}
-
-#pragma mark -
-
-+ (instancetype)shared
-{
-    OWSAssertDebug(Environment.shared.sounds);
-
-    return Environment.shared.sounds;
-}
-
 - (instancetype)init
 {
     self = [super init];
@@ -105,7 +84,7 @@ const NSUInteger OWSCustomSoundShift = 16;
 
     OWSSingletonAssert();
 
-    [AppReadiness runNowOrWhenAppDidBecomeReadyPolite:^{ [OWSSounds cleanupOrphanedSounds]; }];
+    AppReadinessRunNowOrWhenAppDidBecomeReadyAsync(^{ [OWSSounds cleanupOrphanedSounds]; });
 
     return self;
 }

@@ -1,23 +1,11 @@
 //
-//  Copyright (c) 2020 Open Whisper Systems. All rights reserved.
+//  Copyright (c) 2021 Open Whisper Systems. All rights reserved.
 //
 
 import Foundation
 
 @objc
 public extension TSInfoMessage {
-
-    // MARK: - Dependencies
-
-    private var contactsManager: ContactsManagerProtocol {
-        return SSKEnvironment.shared.contactsManager
-    }
-
-    private var tsAccountManager: TSAccountManager {
-        return TSAccountManager.shared()
-    }
-
-    // MARK: -
 
     func groupUpdateDescription(transaction: SDSAnyReadTransaction) -> String {
         // for legacy group updates we persisted a pre-rendered string, rather than the details
@@ -64,6 +52,10 @@ public extension TSInfoMessage {
 
     var profileChangeAddress: SignalServiceAddress? {
         return profileChanges?.address
+    }
+
+    var profileChangesOldFullName: String? {
+        profileChanges?.oldFullName
     }
 
     var profileChangeNewNameComponents: PersonNameComponents? {

@@ -17,13 +17,6 @@ NS_ASSUME_NONNULL_BEGIN
 
 @implementation DebugUIContacts
 
-#pragma mark - Dependencies
-
-+ (SDSDatabaseStorage *)databaseStorage
-{
-    return SDSDatabaseStorage.shared;
-}
-
 #pragma mark - Factory Methods
 
 - (NSString *)name
@@ -33,49 +26,34 @@ NS_ASSUME_NONNULL_BEGIN
 
 - (nullable OWSTableSection *)sectionForThread:(nullable TSThread *)thread
 {
-    return [OWSTableSection sectionWithTitle:self.name
-                                       items:@[
-                                           [OWSTableItem itemWithTitle:@"Create 1 Random Contact"
-                                                           actionBlock:^{
-                                                               [DebugContactsUtils createRandomContacts:1];
-                                                           }],
-                                           [OWSTableItem itemWithTitle:@"Create 100 Random Contacts"
-                                                           actionBlock:^{
-                                                               [DebugContactsUtils createRandomContacts:100];
-                                                           }],
-                                           [OWSTableItem itemWithTitle:@"Create 1k Random Contacts"
-                                                           actionBlock:^{
-                                                               [DebugContactsUtils createRandomContacts:1000];
-                                                           }],
-                                           [OWSTableItem itemWithTitle:@"Create 10k Random Contacts"
-                                                           actionBlock:^{
-                                                               [DebugContactsUtils createRandomContacts:10 * 1000];
-                                                           }],
-                                           [OWSTableItem itemWithTitle:@"Delete Random Contacts"
-                                                           actionBlock:^{
-                                                               [DebugContactsUtils deleteAllRandomContacts];
-                                                           }],
-                                           [OWSTableItem itemWithTitle:@"Delete All Contacts"
-                                                           actionBlock:^{
-                                                               [DebugContactsUtils deleteAllContacts];
-                                                           }],
-                                           [OWSTableItem itemWithTitle:@"Clear SignalAccount Cache"
-                                                           actionBlock:^{
-                                                               [DebugUIContacts clearSignalAccountCache];
-                                                           }],
-                                           [OWSTableItem itemWithTitle:@"Clear SignalRecipient Cache"
-                                                           actionBlock:^{
-                                                               [DebugUIContacts clearSignalRecipientCache];
-                                                           }],
-                                           [OWSTableItem itemWithTitle:@"New Unregistered Contact Thread"
-                                                           actionBlock:^{
-                                                               [DebugUIContacts createUnregisteredContactThread];
-                                                           }],
-                                           [OWSTableItem itemWithTitle:@"New Unregistered Group Thread"
-                                                           actionBlock:^{
-                                                               [DebugUIContacts createUnregisteredGroupThread];
-                                                           }],
-                                       ]];
+    return [OWSTableSection
+        sectionWithTitle:self.name
+                   items:@[
+                       [OWSTableItem itemWithTitle:@"Create 1 Random Contact"
+                                       actionBlock:^{ [DebugContactsUtils createRandomContacts:1]; }],
+                       [OWSTableItem itemWithTitle:@"Create 100 Random Contacts"
+                                       actionBlock:^{ [DebugContactsUtils createRandomContacts:100]; }],
+                       [OWSTableItem itemWithTitle:@"Create 1k Random Contacts"
+                                       actionBlock:^{ [DebugContactsUtils createRandomContacts:1000]; }],
+                       [OWSTableItem itemWithTitle:@"Create 10k Random Contacts"
+                                       actionBlock:^{ [DebugContactsUtils createRandomContacts:10 * 1000]; }],
+                       [OWSTableItem itemWithTitle:@"Delete Random Contacts"
+                                       actionBlock:^{ [DebugContactsUtils deleteAllRandomContacts]; }],
+                       [OWSTableItem itemWithTitle:@"Delete All Contacts"
+                                       actionBlock:^{ [DebugContactsUtils deleteAllContacts]; }],
+                       [OWSTableItem itemWithTitle:@"Clear SignalAccount Cache"
+                                       actionBlock:^{ [DebugUIContacts clearSignalAccountCache]; }],
+                       [OWSTableItem itemWithTitle:@"Clear SignalRecipient Cache"
+                                       actionBlock:^{ [DebugUIContacts clearSignalRecipientCache]; }],
+                       [OWSTableItem itemWithTitle:@"New Unregistered Contact Thread"
+                                       actionBlock:^{ [DebugUIContacts createUnregisteredContactThread]; }],
+                       [OWSTableItem itemWithTitle:@"New Unregistered Group Thread"
+                                       actionBlock:^{ [DebugUIContacts createUnregisteredGroupThread]; }],
+                       [OWSTableItem itemWithTitle:@"Re-index All Contacts"
+                                       actionBlock:^{ [DebugContactsUtils reindexAllContacts]; }],
+                       [OWSTableItem itemWithTitle:@"Log SignalAccounts"
+                                       actionBlock:^{ [DebugContactsUtils logSignalAccounts]; }],
+                   ]];
 }
 
 + (void)clearSignalAccountCache
@@ -107,7 +85,7 @@ NS_ASSUME_NONNULL_BEGIN
 + (void)createUnregisteredContactThread
 {
     TSContactThread *thread = [TSContactThread getOrCreateThreadWithContactAddress:self.unregisteredRecipient];
-    [SignalApp.sharedApp presentConversationForThread:thread animated:YES];
+    [SignalApp.shared presentConversationForThread:thread animated:YES];
 }
 
 + (void)createUnregisteredGroupThread
@@ -127,12 +105,8 @@ NS_ASSUME_NONNULL_BEGIN
         avatarData:nil
         newGroupSeed:nil
         shouldSendMessage:YES
-        success:^(TSGroupThread *thread) {
-            [SignalApp.sharedApp presentConversationForThread:thread animated:YES];
-        }
-        failure:^(NSError *error) {
-            OWSFailDebug(@"Error: %@", error);
-        }];
+        success:^(TSGroupThread *thread) { [SignalApp.shared presentConversationForThread:thread animated:YES]; }
+        failure:^(NSError *error) { OWSFailDebug(@"Error: %@", error); }];
 }
 
 @end

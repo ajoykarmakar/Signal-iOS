@@ -4,7 +4,7 @@
 
 import Foundation
 import PromiseKit
-import HKDFKit
+import SignalClient
 
 // Stickers
 //
@@ -57,29 +57,6 @@ public class StickerManager: NSObject {
         }
     }
 
-    // MARK: - Dependencies
-
-    @objc
-    public class var shared: StickerManager {
-        return SSKEnvironment.shared.stickerManager
-    }
-
-    private static var databaseStorage: SDSDatabaseStorage {
-        return SDSDatabaseStorage.shared
-    }
-
-    private var databaseStorage: SDSDatabaseStorage {
-        return SDSDatabaseStorage.shared
-    }
-
-    private static var messageSenderJobQueue: MessageSenderJobQueue {
-        return SSKEnvironment.shared.messageSenderJobQueue
-    }
-
-    private static var tsAccountManager: TSAccountManager {
-        return TSAccountManager.shared()
-    }
-
     // MARK: - Properties
 
     public static let store = SDSKeyValueStore(collection: "recentStickers")
@@ -105,10 +82,10 @@ public class StickerManager: NSObject {
         super.init()
 
         // Resume sticker and sticker pack downloads when app is ready.
-        AppReadiness.runNowOrWhenAppDidBecomeReadyPolite {
+        AppReadiness.runNowOrWhenAppDidBecomeReadyAsync {
             StickerManager.cleanupOrphans()
 
-            if TSAccountManager.shared().isRegisteredAndReady {
+            if TSAccountManager.shared.isRegisteredAndReady {
                 StickerManager.refreshContents()
             }
         }
@@ -1088,15 +1065,12 @@ public class StickerManager: NSObject {
             owsFailDebug("Invalid pack key length: \(packKey.count).")
             throw StickerError.invalidInput
         }
-        guard let stickerKeyInfo: Data = "Sticker Pack".data(using: .utf8) else {
-            owsFailDebug("Couldn't convert info data.")
-            throw StickerError.assertionFailure
-        }
-        let stickerSalt = Data(repeating: 0, count: 32)
-        let stickerKeyLength: Int32 = 64
-        let stickerKey =
-            try HKDFKit.deriveKey(packKey, info: stickerKeyInfo, salt: stickerSalt, outputSize: stickerKeyLength)
-        return try Cryptography.decryptStickerData(ciphertext, withKey: stickerKey)
+        let stickerKeyInfo = "Sticker Pack"
+        let stickerKeyLength = 64
+        let stickerKey = try stickerKeyInfo.utf8.withContiguousStorageIfAvailable {
+            try hkdf(outputLength: stickerKeyLength, version: 3, inputKeyMaterial: packKey, salt: [], info: $0)
+        }!
+        return try Cryptography.decryptStickerData(ciphertext, withKey: Data(stickerKey))
     }
 
     private class func ensureAllStickerDownloadsAsync() {

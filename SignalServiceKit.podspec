@@ -43,15 +43,14 @@ An Objective-C library for communicating with the Signal messaging service.
   s.dependency 'Curve25519Kit'
   s.dependency 'CocoaLumberjack'
   s.dependency 'AFNetworking/NSURLSession'
-  s.dependency 'AxolotlKit'
   s.dependency 'Mantle'
-  s.dependency 'YapDatabase/SQLCipher'
   s.dependency 'Starscream'
   s.dependency 'libPhoneNumber-iOS'
   s.dependency 'GRKOpenSSLFramework'
   s.dependency 'SAMKeychain'
   s.dependency 'Reachability'
   s.dependency 'SwiftProtobuf'
+  s.dependency 'SignalClient'
   s.dependency 'SignalCoreKit'
   s.dependency 'SignalMetadataKit'
   s.dependency 'GRDB.swift/SQLCipher'
@@ -63,6 +62,6 @@ An Objective-C library for communicating with the Signal messaging service.
 
   s.test_spec 'Tests' do |test_spec|
     test_spec.source_files = 'SignalServiceKit/tests/**/*.{h,m,swift}'
-    test_spec.resources = 'SignalServiceKit/tests/**/*.json'
+    test_spec.resources = 'SignalServiceKit/tests/**/*.{json,encrypted,webp}'
   end
 end

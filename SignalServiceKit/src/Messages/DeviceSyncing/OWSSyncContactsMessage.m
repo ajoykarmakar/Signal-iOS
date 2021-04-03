@@ -1,5 +1,5 @@
 //
-//  Copyright (c) 2020 Open Whisper Systems. All rights reserved.
+//  Copyright (c) 2021 Open Whisper Systems. All rights reserved.
 //
 
 #import "OWSSyncContactsMessage.h"
@@ -23,8 +23,6 @@ NS_ASSUME_NONNULL_BEGIN
 @interface OWSSyncContactsMessage ()
 
 @property (nonatomic, readonly) NSArray<SignalAccount *> *signalAccounts;
-@property (nonatomic, readonly) OWSIdentityManager *identityManager;
-@property (nonatomic, readonly) id<ProfileManagerProtocol> profileManager;
 
 @end
 
@@ -32,8 +30,6 @@ NS_ASSUME_NONNULL_BEGIN
 
 - (instancetype)initWithThread:(TSThread *)thread
                 signalAccounts:(NSArray<SignalAccount *> *)signalAccounts
-               identityManager:(OWSIdentityManager *)identityManager
-                profileManager:(id<ProfileManagerProtocol>)profileManager
 {
     self = [super initWithThread:thread];
     if (!self) {
@@ -41,8 +37,6 @@ NS_ASSUME_NONNULL_BEGIN
     }
 
     _signalAccounts = signalAccounts;
-    _identityManager = identityManager;
-    _profileManager = profileManager;
 
     return self;
 }
@@ -51,18 +45,6 @@ NS_ASSUME_NONNULL_BEGIN
 {
     return [super initWithCoder:coder];
 }
-
-#pragma mark - Dependencies
-
-- (id<ContactsManagerProtocol>)contactsManager {
-    return SSKEnvironment.shared.contactsManager;
-}
-
-- (TSAccountManager *)tsAccountManager {
-    return TSAccountManager.shared;
-}
-
-#pragma mark -
 
 - (nullable SSKProtoSyncMessageBuilder *)syncMessageBuilderWithTransaction:(SDSAnyReadTransaction *)transaction
 {

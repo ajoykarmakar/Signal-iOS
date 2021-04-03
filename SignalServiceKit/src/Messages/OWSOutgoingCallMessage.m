@@ -1,5 +1,5 @@
 //
-//  Copyright (c) 2020 Open Whisper Systems. All rights reserved.
+//  Copyright (c) 2021 Open Whisper Systems. All rights reserved.
 //
 
 #import "OWSOutgoingCallMessage.h"
@@ -12,15 +12,6 @@
 NS_ASSUME_NONNULL_BEGIN
 
 @implementation OWSOutgoingCallMessage
-
-#pragma mark - Dependencies
-
-- (SDSDatabaseStorage *)databaseStorage
-{
-    return SDSDatabaseStorage.shared;
-}
-
-#pragma mark -
 
 - (instancetype)initWithThread:(TSThread *)thread
 {
@@ -140,13 +131,6 @@ NS_ASSUME_NONNULL_BEGIN
 - (BOOL)shouldSyncTranscript
 {
     return NO;
-}
-
-- (BOOL)isSilent
-{
-    // Avoid "phantom messages" for "outgoing call messages".
-
-    return YES;
 }
 
 - (nullable NSData *)buildPlainTextData:(SignalServiceAddress *)address

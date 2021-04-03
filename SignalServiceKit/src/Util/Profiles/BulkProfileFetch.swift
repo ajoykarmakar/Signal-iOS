@@ -7,26 +7,6 @@ import PromiseKit
 @objc
 public class BulkProfileFetch: NSObject {
 
-    // MARK: - Dependencies
-
-    private var profileManager: ProfileManagerProtocol {
-        return SSKEnvironment.shared.profileManager
-    }
-
-    private var tsAccountManager: TSAccountManager {
-        return .shared()
-    }
-
-    private var reachabilityManager: SSKReachabilityManager {
-        return SSKEnvironment.shared.reachabilityManager
-    }
-
-    private var databaseStorage: SDSDatabaseStorage {
-        return .shared
-    }
-
-    // MARK: -
-
     private let serialQueue = DispatchQueue(label: "BulkProfileFetch")
 
     // This property should only be accessed on serialQueue.
@@ -66,7 +46,7 @@ public class BulkProfileFetch: NSObject {
 
         SwiftSingletons.register(self)
 
-        AppReadiness.runNowOrWhenAppDidBecomeReadyPolite {
+        AppReadiness.runNowOrWhenAppDidBecomeReadyAsync {
             // Try to update missing & stale profiles on launch.
             DispatchQueue.global(qos: .utility).async {
                 self.fetchMissingAndStaleProfiles()
@@ -95,7 +75,12 @@ public class BulkProfileFetch: NSObject {
     // This should be used for non-urgent profile updates.
     @objc
     public func fetchProfiles(thread: TSThread) {
-        fetchProfiles(addresses: thread.recipientAddresses)
+        var addresses = Set(thread.recipientAddresses)
+        if let groupThread = thread as? TSGroupThread,
+           let groupModel = groupThread.groupModel as? TSGroupModelV2 {
+            addresses.formUnion(groupModel.droppedMembers)
+        }
+        fetchProfiles(addresses: Array(addresses))
     }
 
     // This should be used for non-urgent profile updates.

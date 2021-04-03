@@ -20,7 +20,6 @@
 #import "OWSDisappearingMessagesJob.h"
 #import "OWSGroupInfoRequestMessage.h"
 #import "OWSIdentityManager.h"
-#import "OWSIncomingMessageFinder.h"
 #import "OWSIncomingSentMessageTranscript.h"
 #import "OWSMessageUtils.h"
 #import "OWSOutgoingReceiptManager.h"
@@ -28,7 +27,6 @@
 #import "OWSRecordTranscriptJob.h"
 #import "ProfileManagerProtocol.h"
 #import "SSKEnvironment.h"
-#import "SSKSessionStore.h"
 #import "TSAccountManager.h"
 #import "TSAttachment.h"
 #import "TSAttachmentPointer.h"
@@ -46,6 +44,7 @@
 #import <SignalCoreKit/NSData+OWS.h>
 #import <SignalCoreKit/NSDate+OWS.h>
 #import <SignalCoreKit/NSString+OWS.h>
+#import <SignalServiceKit/NSData+Image.h>
 #import <SignalServiceKit/OWSUnknownProtocolVersionMessage.h>
 #import <SignalServiceKit/SignalRecipient.h>
 #import <SignalServiceKit/SignalServiceKit-Swift.h>
@@ -75,113 +74,12 @@ NS_ASSUME_NONNULL_BEGIN
 
     OWSSingletonAssert();
 
+    if (CurrentAppContext().isMainApp) {
+        AppReadinessRunNowOrWhenAppWillBecomeReady(^{ [self startObserving]; });
+    }
+
     return self;
 }
-
-#pragma mark - Dependencies
-
-- (id<OWSCallMessageHandler>)callMessageHandler
-{
-    OWSAssertDebug(SSKEnvironment.shared.callMessageHandler);
-
-    return SSKEnvironment.shared.callMessageHandler;
-}
-
-- (id<ContactsManagerProtocol>)contactsManager
-{
-    OWSAssertDebug(SSKEnvironment.shared.contactsManager);
-
-    return SSKEnvironment.shared.contactsManager;
-}
-
-- (MessageSenderJobQueue *)messageSenderJobQueue
-{
-    return SSKEnvironment.shared.messageSenderJobQueue;
-}
-
-- (OWSBlockingManager *)blockingManager
-{
-    OWSAssertDebug(SSKEnvironment.shared.blockingManager);
-
-    return SSKEnvironment.shared.blockingManager;
-}
-
-- (OWSIdentityManager *)identityManager
-{
-    OWSAssertDebug(SSKEnvironment.shared.identityManager);
-
-    return SSKEnvironment.shared.identityManager;
-}
-
-- (TSNetworkManager *)networkManager
-{
-    OWSAssertDebug(SSKEnvironment.shared.networkManager);
-
-    return SSKEnvironment.shared.networkManager;
-}
-
-- (OWSOutgoingReceiptManager *)outgoingReceiptManager
-{
-    OWSAssertDebug(SSKEnvironment.shared.outgoingReceiptManager);
-
-    return SSKEnvironment.shared.outgoingReceiptManager;
-}
-
-- (id<SyncManagerProtocol>)syncManager
-{
-    OWSAssertDebug(SSKEnvironment.shared.syncManager);
-
-    return SSKEnvironment.shared.syncManager;
-}
-
-- (TSAccountManager *)tsAccountManager
-{
-    OWSAssertDebug(SSKEnvironment.shared.tsAccountManager);
-
-    return SSKEnvironment.shared.tsAccountManager;
-}
-
-- (id<ProfileManagerProtocol>)profileManager
-{
-    return SSKEnvironment.shared.profileManager;
-}
-
-- (id<OWSTypingIndicators>)typingIndicators
-{
-    return SSKEnvironment.shared.typingIndicators;
-}
-
-- (OWSAttachmentDownloads *)attachmentDownloads
-{
-    return SSKEnvironment.shared.attachmentDownloads;
-}
-
-- (SDSDatabaseStorage *)databaseStorage
-{
-    return SDSDatabaseStorage.shared;
-}
-
-- (SSKSessionStore *)sessionStore
-{
-    return SSKEnvironment.shared.sessionStore;
-}
-
-- (id<GroupsV2>)groupsV2
-{
-    return SSKEnvironment.shared.groupsV2;
-}
-
-- (EarlyMessageManager *)earlyMessageManager
-{
-    return SSKEnvironment.shared.earlyMessageManager;
-}
-
-- (MessageProcessing *)messageProcessing
-{
-    return MessageProcessing.shared;
-}
-
-#pragma mark -
 
 - (void)startObserving
 {
@@ -626,14 +524,16 @@ NS_ASSUME_NONNULL_BEGIN
     if ([dataMessage hasProfileKey]) {
         NSData *profileKey = [dataMessage profileKey];
         SignalServiceAddress *address = envelope.sourceAddress;
-        if (profileKey.length == kAES256_KeyByteLength) {
+        if (address.isLocalAddress && self.tsAccountManager.isPrimaryDevice) {
+            OWSLogVerbose(@"Ignoring profile key for local device on primary.");
+        } else if (profileKey.length != kAES256_KeyByteLength) {
+            OWSFailDebug(
+                @"Unexpected profile key length: %lu on message from: %@", (unsigned long)profileKey.length, address);
+        } else {
             [self.profileManager setProfileKeyData:profileKey
                                         forAddress:address
                                wasLocallyInitiated:YES
                                        transaction:transaction];
-        } else {
-            OWSFailDebug(
-                @"Unexpected profile key length:%lu on message from:%@", (unsigned long)profileKey.length, address);
         }
     }
 
@@ -657,7 +557,7 @@ NS_ASSUME_NONNULL_BEGIN
                                                       thread:thread
                                                  transaction:transaction];
     } else if ((dataMessage.flags & SSKProtoDataMessageFlagsProfileKeyUpdate) != 0) {
-        [self handleProfileKeyMessageWithEnvelope:envelope dataMessage:dataMessage transaction:transaction];
+        // Do nothing, we handle profile keys on all incoming messages above.
     } else if (dataMessage.attachments.count > 0) {
         [self handleReceivedMediaWithEnvelope:envelope
                                   dataMessage:dataMessage
@@ -944,7 +844,7 @@ NS_ASSUME_NONNULL_BEGIN
     }
 
     // Once we've drained the queue we can reset groupInfoRequestSet.
-    [self.messageProcessing allMessageFetchingAndProcessingPromiseObjc].thenInBackground(^{
+    [MessageProcessor.shared fetchingAndProcessingCompletePromise].thenInBackground(^{
         @synchronized(self) {
             [self.groupInfoRequestSet removeAllObjects];
         }
@@ -1058,10 +958,17 @@ NS_ASSUME_NONNULL_BEGIN
     if ([callMessage hasProfileKey]) {
         NSData *profileKey = [callMessage profileKey];
         SignalServiceAddress *address = envelope.sourceAddress;
-        [self.profileManager setProfileKeyData:profileKey
-                                    forAddress:address
-                           wasLocallyInitiated:YES
-                                   transaction:transaction];
+        if (address.isLocalAddress && self.tsAccountManager.isPrimaryDevice) {
+            OWSLogVerbose(@"Ignoring profile key for local device on primary.");
+        } else if (profileKey.length != kAES256_KeyByteLength) {
+            OWSFailDebug(
+                @"Unexpected profile key length: %lu on message from: %@", (unsigned long)profileKey.length, address);
+        } else {
+            [self.profileManager setProfileKeyData:profileKey
+                                        forAddress:address
+                               wasLocallyInitiated:YES
+                                       transaction:transaction];
+        }
     }
 
     BOOL supportsMultiRing = false;
@@ -1194,14 +1101,14 @@ NS_ASSUME_NONNULL_BEGIN
     dispatch_async(dispatch_get_main_queue(), ^{
         switch (typingMessage.unwrappedAction) {
             case SSKProtoTypingMessageActionStarted:
-                [self.typingIndicators didReceiveTypingStartedMessageInThread:thread
-                                                                      address:envelope.sourceAddress
-                                                                     deviceId:envelope.sourceDevice];
+                [self.typingIndicatorsImpl didReceiveTypingStartedMessageInThread:thread
+                                                                          address:envelope.sourceAddress
+                                                                         deviceId:envelope.sourceDevice];
                 break;
             case SSKProtoTypingMessageActionStopped:
-                [self.typingIndicators didReceiveTypingStoppedMessageInThread:thread
-                                                                      address:envelope.sourceAddress
-                                                                     deviceId:envelope.sourceDevice];
+                [self.typingIndicatorsImpl didReceiveTypingStoppedMessageInThread:thread
+                                                                          address:envelope.sourceAddress
+                                                                         deviceId:envelope.sourceDevice];
                 break;
             default:
                 OWSFailDebug(@"Typing message has unexpected action.");
@@ -1482,6 +1389,10 @@ NS_ASSUME_NONNULL_BEGIN
                 OWSLogError(@"failed to fetch attachments for group avatar sent at: %llu. with error: %@",
                     envelope.timestamp,
                     error);
+
+                if (CurrentAppContext().isRunningTests) {
+                    return;
+                }
 
                 DatabaseStorageWrite(self.databaseStorage, ^(SDSAnyWriteTransaction *transaction) {
                     // Eagerly clean up the attachment.
@@ -1869,36 +1780,6 @@ NS_ASSUME_NONNULL_BEGIN
                                                  transaction:transaction];
 }
 
-- (void)handleProfileKeyMessageWithEnvelope:(SSKProtoEnvelope *)envelope
-                                dataMessage:(SSKProtoDataMessage *)dataMessage
-                                transaction:(SDSAnyWriteTransaction *)transaction
-{
-    if (!envelope) {
-        OWSFailDebug(@"Missing envelope.");
-        return;
-    }
-    if (!dataMessage) {
-        OWSFailDebug(@"Missing dataMessage.");
-        return;
-    }
-
-    SignalServiceAddress *address = envelope.sourceAddress;
-    if (!dataMessage.hasProfileKey) {
-        OWSFailDebug(@"received profile key message without profile key from: %@", envelopeAddress(envelope));
-        return;
-    }
-    NSData *profileKey = dataMessage.profileKey;
-    if (profileKey.length != kAES256_KeyByteLength) {
-        OWSFailDebug(@"received profile key of unexpected length: %lu, from: %@",
-            (unsigned long)profileKey.length,
-            envelopeAddress(envelope));
-        return;
-    }
-
-    id<ProfileManagerProtocol> profileManager = SSKEnvironment.shared.profileManager;
-    [profileManager setProfileKeyData:profileKey forAddress:address wasLocallyInitiated:YES transaction:transaction];
-}
-
 - (void)handleReceivedTextMessageWithEnvelope:(SSKProtoEnvelope *)envelope
                                   dataMessage:(SSKProtoDataMessage *)dataMessage
                                        thread:(TSThread *)thread
@@ -2012,14 +1893,18 @@ NS_ASSUME_NONNULL_BEGIN
         groupAvatarData = groupThread.groupModel.groupAvatarData;
         OWSAssertDebug(groupAvatarData.length > 0);
     }
+    ImageFormat format = [groupAvatarData imageMetadataWithPath:nil mimeType:nil].imageFormat;
+    NSString *mimeType = (format == ImageFormat_Png) ? OWSMimeTypeImagePng : OWSMimeTypeImageJpeg;
+    NSString *extension = (format == ImageFormat_Png) ? @"png" : @"jpg";
+
     _Nullable id<DataSource> groupAvatarDataSource;
     if (groupAvatarData.length > 0) {
-        groupAvatarDataSource = [DataSourceValue dataSourceWithData:groupAvatarData fileExtension:@"png"];
+        groupAvatarDataSource = [DataSourceValue dataSourceWithData:groupAvatarData fileExtension:extension];
     }
     if (groupAvatarDataSource != nil) {
         [self.messageSenderJobQueue addMediaMessage:message
                                          dataSource:groupAvatarDataSource
-                                        contentType:OWSMimeTypeImagePng
+                                        contentType:mimeType
                                      sourceFilename:nil
                                             caption:nil
                                      albumMessageId:nil
@@ -2283,9 +2168,9 @@ NS_ASSUME_NONNULL_BEGIN
                                                                  transaction:transaction];
 
     dispatch_async(dispatch_get_main_queue(), ^{
-        [self.typingIndicators didReceiveIncomingMessageInThread:thread
-                                                         address:envelope.sourceAddress
-                                                        deviceId:envelope.sourceDevice];
+        [self.typingIndicatorsImpl didReceiveIncomingMessageInThread:thread
+                                                             address:envelope.sourceAddress
+                                                            deviceId:envelope.sourceDevice];
     });
 
     return message;

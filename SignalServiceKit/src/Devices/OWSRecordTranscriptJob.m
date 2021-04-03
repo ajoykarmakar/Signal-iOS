@@ -8,7 +8,6 @@
 #import "OWSIncomingSentMessageTranscript.h"
 #import "OWSReadReceiptManager.h"
 #import "SSKEnvironment.h"
-#import "SSKSessionStore.h"
 #import "TSAttachmentPointer.h"
 #import "TSGroupThread.h"
 #import "TSInfoMessage.h"
@@ -22,56 +21,6 @@
 NS_ASSUME_NONNULL_BEGIN
 
 @implementation OWSRecordTranscriptJob
-
-#pragma mark - Dependencies
-
-+ (SSKSessionStore *)sessionStore
-{
-    return SSKEnvironment.shared.sessionStore;
-}
-
-+ (TSNetworkManager *)networkManager
-{
-    OWSAssertDebug(SSKEnvironment.shared.networkManager);
-
-    return SSKEnvironment.shared.networkManager;
-}
-
-+ (OWSReadReceiptManager *)readReceiptManager
-{
-    OWSAssert(SSKEnvironment.shared.readReceiptManager);
-
-    return SSKEnvironment.shared.readReceiptManager;
-}
-
-+ (id<ContactsManagerProtocol>)contactsManager
-{
-    OWSAssertDebug(SSKEnvironment.shared.contactsManager);
-
-    return SSKEnvironment.shared.contactsManager;
-}
-
-+ (OWSAttachmentDownloads *)attachmentDownloads
-{
-    return SSKEnvironment.shared.attachmentDownloads;
-}
-
-+ (SDSDatabaseStorage *)databaseStorage
-{
-    return SDSDatabaseStorage.shared;
-}
-
-+ (TSAccountManager *)tsAccountManager
-{
-    return SSKEnvironment.shared.tsAccountManager;
-}
-
-+ (EarlyMessageManager *)earlyMessageManager
-{
-    return SSKEnvironment.shared.earlyMessageManager;
-}
-
-#pragma mark -
 
 + (void)processIncomingSentMessageTranscript:(OWSIncomingSentMessageTranscript *)transcript
                            attachmentHandler:(void (^)(
@@ -188,7 +137,7 @@ NS_ASSUME_NONNULL_BEGIN
             // This is probably a v2 group update.
             OWSLogWarn(@"Ignoring message transcript for empty v2 group message.");
         } else {
-            OWSFailDebug(@"Ignoring message transcript for empty message.");
+            OWSLogWarn(@"Ignoring message transcript for empty message.");
         }
         return;
     }
@@ -201,9 +150,9 @@ NS_ASSUME_NONNULL_BEGIN
     // The insert and update methods above may start expiration for this message, but
     // transcript.expirationStartedAt may be earlier, so we need to pass that to
     // the OWSDisappearingMessagesJob in case it needs to back-date the expiration.
-    [[OWSDisappearingMessagesJob sharedJob] startAnyExpirationForMessage:outgoingMessage
-                                                     expirationStartedAt:transcript.expirationStartedAt
-                                                             transaction:transaction];
+    [[OWSDisappearingMessagesJob shared] startAnyExpirationForMessage:outgoingMessage
+                                                  expirationStartedAt:transcript.expirationStartedAt
+                                                          transaction:transaction];
 
     [self.earlyMessageManager applyPendingMessagesFor:outgoingMessage transaction:transaction];
 

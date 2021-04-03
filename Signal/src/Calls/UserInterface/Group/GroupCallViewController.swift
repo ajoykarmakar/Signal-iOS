@@ -1,5 +1,5 @@
 //
-//  Copyright (c) 2020 Open Whisper Systems. All rights reserved.
+//  Copyright (c) 2021 Open Whisper Systems. All rights reserved.
 //
 
 import Foundation
@@ -100,7 +100,7 @@ class GroupCallViewController: UIViewController {
                     return
                 }
 
-                guard let groupCall = AppEnvironment.shared.callService.buildAndConnectGroupCallIfPossible(
+                guard let groupCall = Self.callService.buildAndConnectGroupCallIfPossible(
                         thread: thread
                 ) else {
                     return owsFailDebug("Failed to build group call")
@@ -207,6 +207,8 @@ class GroupCallViewController: UIViewController {
     }
 
     override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+
         if hasUnresolvedSafetyNumberMismatch {
             resolveSafetyNumberMismatch()
         }
@@ -529,7 +531,7 @@ extension GroupCallViewController: CallViewControllerWindowReference {
                 }
             }
         } else {
-            AppEnvironment.shared.notificationPresenter.notifyForGroupCallSafetyNumberChange(inThread: call.thread)
+            Self.notificationPresenter.notifyForGroupCallSafetyNumberChange(inThread: call.thread)
         }
     }
 
@@ -540,7 +542,7 @@ extension GroupCallViewController: CallViewControllerWindowReference {
         // If we haven't joined the call yet, we want to alert for all members of the group
         // If we are in the call, we only care about safety numbers for the active call participants
         let addressesToAlert = call.thread.recipientAddresses.filter { memberAddress in
-            let isUntrusted = OWSIdentityManager.shared().untrustedIdentityForSending(to: memberAddress) != nil
+            let isUntrusted = Self.identityManager.untrustedIdentityForSending(to: memberAddress) != nil
             let isMemberInCall = currentParticipantAddresses.contains(memberAddress)
 
             // We want to alert for safety number changes of all members if we haven't joined yet
@@ -576,7 +578,7 @@ extension GroupCallViewController: CallViewControllerWindowReference {
 
             if didApprove {
                 SDSDatabaseStorage.shared.asyncWrite { writeTx in
-                    let identityManager = OWSIdentityManager.shared()
+                    let identityManager = Self.identityManager
                     for address in addressesToAlert {
                         guard let identityKey = identityManager.identityKey(for: address, transaction: writeTx) else { return }
                         let currentState = identityManager.verificationState(for: address, transaction: writeTx)

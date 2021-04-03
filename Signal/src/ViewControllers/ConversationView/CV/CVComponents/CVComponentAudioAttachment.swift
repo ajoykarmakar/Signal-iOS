@@ -7,14 +7,6 @@ import Foundation
 @objc
 public class CVComponentAudioAttachment: CVComponentBase, CVComponent {
 
-    // MARK: - Dependencies
-
-    private var audioPlayer: CVAudioPlayer {
-        return AppEnvironment.shared.audioPlayer
-    }
-
-    // MARK: -
-
     private let audioAttachment: AudioAttachment
     private var attachment: TSAttachment { audioAttachment.attachment }
     private var attachmentStream: TSAttachmentStream? { audioAttachment.attachmentStream }
@@ -46,10 +38,6 @@ public class CVComponentAudioAttachment: CVComponentBase, CVComponent {
         componentView.audioMessageView = audioMessageView
         componentView.rootView.addSubview(audioMessageView)
         audioMessageView.autoPinEdgesToSuperviewEdges()
-
-        let accessibilityDescription = NSLocalizedString("ACCESSIBILITY_LABEL_AUDIO",
-                                                         comment: "Accessibility label for audio.")
-        audioMessageView.accessibilityLabel = accessibilityLabel(description: accessibilityDescription)
     }
 
     public func measure(maxWidth: CGFloat, measurementBuilder: CVCellMeasurement.Builder) -> CGSize {
@@ -71,7 +59,7 @@ public class CVComponentAudioAttachment: CVComponentBase, CVComponent {
         guard let attachmentStream = attachmentStream else {
             return false
         }
-        audioPlayer.togglePlayState(forAttachmentStream: attachmentStream)
+        cvAudioPlayer.togglePlayState(forAttachmentStream: attachmentStream)
         return true
     }
 
@@ -81,7 +69,7 @@ public class CVComponentAudioAttachment: CVComponentBase, CVComponent {
                                         componentDelegate: CVComponentDelegate,
                                         componentView: CVComponentView,
                                         renderItem: CVRenderItem,
-                                        swipeToReplyState: CVSwipeToReplyState) -> CVPanHandler? {
+                                        messageSwipeActionState: CVMessageSwipeActionState) -> CVPanHandler? {
         AssertIsOnMainThread()
 
         guard let componentView = componentView as? CVComponentViewAudioAttachment else {
@@ -114,7 +102,7 @@ public class CVComponentAudioAttachment: CVComponentBase, CVComponent {
                                          componentDelegate: CVComponentDelegate,
                                          componentView: CVComponentView,
                                          renderItem: CVRenderItem,
-                                         swipeToReplyState: CVSwipeToReplyState) {
+                                         messageSwipeActionState: CVMessageSwipeActionState) {
         AssertIsOnMainThread()
     }
 
@@ -123,7 +111,7 @@ public class CVComponentAudioAttachment: CVComponentBase, CVComponent {
                                           componentDelegate: CVComponentDelegate,
                                           componentView: CVComponentView,
                                           renderItem: CVRenderItem,
-                                          swipeToReplyState: CVSwipeToReplyState) {
+                                          messageSwipeActionState: CVMessageSwipeActionState) {
         AssertIsOnMainThread()
 
         guard let componentView = componentView as? CVComponentViewAudioAttachment else {
@@ -147,10 +135,10 @@ public class CVComponentAudioAttachment: CVComponentBase, CVComponent {
             // we still call `scrubToLocation` above in order to update the slider.
             audioMessageView.clearOverrideProgress(animated: false)
             let scrubbedTime = audioMessageView.scrubToLocation(location)
-            audioPlayer.setPlaybackProgress(progress: scrubbedTime,
+            cvAudioPlayer.setPlaybackProgress(progress: scrubbedTime,
                                             forAttachmentStream: attachmentStream)
-            if audioPlayer.audioPlaybackState(forAttachmentId: attachmentStream.uniqueId) != .playing {
-                audioPlayer.togglePlayState(forAttachmentStream: attachmentStream)
+            if cvAudioPlayer.audioPlaybackState(forAttachmentId: attachmentStream.uniqueId) != .playing {
+                cvAudioPlayer.togglePlayState(forAttachmentStream: attachmentStream)
             }
         case .possible, .began, .failed, .cancelled:
             audioMessageView.clearOverrideProgress(animated: false)
@@ -184,6 +172,29 @@ public class CVComponentAudioAttachment: CVComponentBase, CVComponent {
 
             audioMessageView?.removeFromSuperview()
             audioMessageView = nil
+        }
+    }
+}
+
+// MARK: -
+
+extension CVComponentAudioAttachment: CVAccessibilityComponent {
+    public var accessibilityDescription: String {
+        if attachment.isVoiceMessage {
+            if let attachmentStream = attachmentStream,
+               attachmentStream.audioDurationSeconds() > 0 {
+                let format = NSLocalizedString("ACCESSIBILITY_LABEL_VOICE_MEMO_FORMAT",
+                                               comment: "Accessibility label for a voice memo. Embeds: {{ the duration of the voice message }}.")
+                let duration = OWSFormat.formatInt(Int(attachmentStream.audioDurationSeconds()))
+                return String(format: format, duration)
+            } else {
+                return NSLocalizedString("ACCESSIBILITY_LABEL_VOICE_MEMO",
+                                         comment: "Accessibility label for a voice memo.")
+            }
+        } else {
+            // TODO: We could include information about the attachment format.
+            return NSLocalizedString("ACCESSIBILITY_LABEL_AUDIO",
+                                     comment: "Accessibility label for audio.")
         }
     }
 }

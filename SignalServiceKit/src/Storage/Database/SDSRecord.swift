@@ -1,5 +1,5 @@
 //
-//  Copyright (c) 2020 Open Whisper Systems. All rights reserved.
+//  Copyright (c) 2021 Open Whisper Systems. All rights reserved.
 //
 
 import Foundation
@@ -83,6 +83,13 @@ public extension SDSRecord {
             statement.unsafeSetArguments(arguments)
             try statement.execute()
         } catch {
+            // If the attempt to write to GRDB flagged that the database was
+            // corrupt, in addition to crashing we flag this so that we can
+            // attempt to perform recovery.
+            if let error = error as? DatabaseError, error.resultCode == .SQLITE_CORRUPT {
+                SSKPreferences.setHasGrdbDatabaseCorruption(true)
+            }
+
             owsFail("Write failed: \(error.grdbErrorForLogging)")
         }
     }
@@ -103,7 +110,6 @@ fileprivate extension SDSRecord {
 // MARK: -
 
 extension BaseModel {
-
     static func grdbIdByUniqueId(tableMetadata: SDSTableMetadata,
                                  uniqueIdColumnName: String,
                                  uniqueIdColumnValue: String,

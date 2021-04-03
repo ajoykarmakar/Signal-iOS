@@ -86,14 +86,6 @@ public class ThreadMappingDiff: NSObject {
 @objc
 class ThreadMapping: NSObject {
 
-    // MARK: - Dependencies
-
-    private var threadReadCache: ThreadReadCache {
-        SSKEnvironment.shared.modelReadCaches.threadReadCache
-    }
-
-    // MARK: -
-
     private var pinnedThreads = OrderedDictionary<String, TSThread>()
     private var unpinnedThreads: [TSThread] = []
 
@@ -110,7 +102,7 @@ class ThreadMapping: NSObject {
     var inboxCount: UInt = 0
 
     @objc
-    var hasPinnedAndUnpinnedThreads: Bool { !pinnedThreads.orderedKeys.isEmpty && !unpinnedThreads.isEmpty }
+    var hasPinnedAndUnpinnedThreads: Bool { !pinnedThreads.isEmpty && !unpinnedThreads.isEmpty }
 
     @objc
     var pinnedThreadIds: [String] { pinnedThreads.orderedKeys }
@@ -142,7 +134,7 @@ class ThreadMapping: NSObject {
     func thread(indexPath: IndexPath) -> TSThread? {
         switch indexPath.section {
         case pinnedSection:
-            return pinnedThreads.orderedValues[safe: indexPath.item]
+            return pinnedThreads[safe: indexPath.item]?.value
         case unpinnedSection:
             return unpinnedThreads[safe: indexPath.item]
         default:
@@ -263,8 +255,8 @@ class ThreadMapping: NSObject {
         guard !threadIds.isEmpty else { return }
 
         // 2. Try to pull as many threads as possible from the cache.
-        var threadIdToModelMap: [String: TSThread] = threadReadCache.getThreadsIfInCache(forUniqueIds: threadIds,
-                                                                                         transaction: transaction)
+        var threadIdToModelMap: [String: TSThread] = modelReadCaches.threadReadCache.getThreadsIfInCache(forUniqueIds: threadIds,
+                                                                                                         transaction: transaction)
         var threadsToLoad = Set(threadIds)
         threadsToLoad.subtract(threadIdToModelMap.keys)
 
@@ -642,54 +634,6 @@ class ThreadMapping: NSObject {
         }
 
         return ThreadMappingDiff(sectionChanges: [], rowChanges: rowChanges)
-    }
-
-    // For performance reasons, the database modification notifications are used
-    // to determine which items were modified.  If YapDatabase ever changes the
-    // structure or semantics of these notifications, we'll need to update this
-    // code to reflect that.
-    @objc
-    public func updatedYapItemIds(forNotifications notifications: [NSNotification]) -> Set<String> {
-        // We'll move this into the Yap adapter when addressing updates/observation
-        let viewName: String = TSThreadDatabaseViewExtensionName
-
-        var updatedItemIds = Set<String>()
-        for notification in notifications {
-            // Unpack the YDB notification, looking for row changes.
-            guard let userInfo =
-                notification.userInfo else {
-                    owsFailDebug("Missing userInfo.")
-                    continue
-            }
-            guard let viewChangesets =
-                userInfo[YapDatabaseExtensionsKey] as? NSDictionary else {
-                    // No changes for any views, skip.
-                    continue
-            }
-            guard let changeset =
-                viewChangesets[viewName] as? NSDictionary else {
-                    // No changes for this view, skip.
-                    continue
-            }
-            // This constant matches a private constant in YDB.
-            let changeset_key_changes: String = "changes"
-            guard let changesetChanges = changeset[changeset_key_changes] as? [Any] else {
-                owsFailDebug("Missing changeset changes.")
-                continue
-            }
-            for change in changesetChanges {
-                if change as? YapDatabaseViewSectionChange != nil {
-                    // Ignore.
-                } else if let rowChange = change as? YapDatabaseViewRowChange {
-                    updatedItemIds.insert(rowChange.collectionKey.key)
-                } else {
-                    owsFailDebug("Invalid change: \(type(of: change)).")
-                    continue
-                }
-            }
-        }
-
-        return updatedItemIds
     }
 }
 

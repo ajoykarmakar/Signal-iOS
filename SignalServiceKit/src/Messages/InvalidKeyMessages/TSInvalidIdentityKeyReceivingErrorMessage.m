@@ -6,12 +6,10 @@
 #import "OWSFingerprint.h"
 #import "OWSIdentityManager.h"
 #import "OWSMessageManager.h"
-#import "OWSMessageReceiver.h"
 #import "SSKEnvironment.h"
-#import "SSKSessionStore.h"
 #import "TSContactThread.h"
-#import <AxolotlKit/NSData+keyVersionByte.h>
-#import <AxolotlKit/PreKeyWhisperMessage.h>
+#import <SignalServiceKit/AxolotlExceptions.h>
+#import <SignalServiceKit/NSData+keyVersionByte.h>
 #import <SignalServiceKit/SignalServiceKit-Swift.h>
 
 NS_ASSUME_NONNULL_BEGIN
@@ -25,6 +23,10 @@ __attribute__((deprecated)) @interface TSInvalidIdentityKeyReceivingErrorMessage
 @end
 
 #pragma mark -
+
+@interface TSInvalidIdentityKeyReceivingErrorMessage (ImplementedInSwift)
+- (nullable NSData *)identityKeyFromEncodedPreKeySignalMessage:(NSData *)pksmBytes error:(NSError **)error;
+@end
 
 @implementation TSInvalidIdentityKeyReceivingErrorMessage {
     // Not using a property declaration in order to exclude from DB serialization
@@ -187,15 +189,19 @@ __attribute__((deprecated)) @interface TSInvalidIdentityKeyReceivingErrorMessage
         [self.threadWithSneakyTransaction receivedMessagesForInvalidKey:newKey];
 
     for (TSInvalidIdentityKeyReceivingErrorMessage *errorMessage in messagesToDecrypt) {
-        [SSKEnvironment.shared.messageReceiver handleReceivedEnvelopeData:errorMessage.envelopeData
-                                                  serverDeliveryTimestamp:0];
-
-        // Here we remove the existing error message because handleReceivedEnvelope will either
-        //  1.) succeed and create a new successful message in the thread or...
-        //  2.) fail and create a new identical error message in the thread.
-        DatabaseStorageWrite(self.databaseStorage, ^(SDSAnyWriteTransaction *transaction) {
-            [errorMessage anyRemoveWithTransaction:transaction];
-        });
+        [MessageProcessor.shared
+            processEncryptedEnvelopeData:errorMessage.envelopeData
+                       encryptedEnvelope:nil
+                 serverDeliveryTimestamp:0
+                              completion:^(NSError *error) {
+                                  // Here we remove the existing error message because handleReceivedEnvelope will
+                                  // either
+                                  //  1.) succeed and create a new successful message in the thread or...
+                                  //  2.) fail and create a new identical error message in the thread.
+                                  DatabaseStorageWrite(self.databaseStorage, ^(SDSAnyWriteTransaction *transaction) {
+                                      [errorMessage anyRemoveWithTransaction:transaction];
+                                  });
+                              }];
     }
 }
 
@@ -220,8 +226,12 @@ __attribute__((deprecated)) @interface TSInvalidIdentityKeyReceivingErrorMessage
         return nil;
     }
 
-    PreKeyWhisperMessage *message = [[PreKeyWhisperMessage alloc] init_throws_withData:pkwmData];
-    return [message.identityKey throws_removeKeyType];
+    NSError *_Nullable error;
+    NSData *_Nullable result = [[self class] identityKeyFromEncodedPreKeySignalMessage:pkwmData error:&error];
+    if (!result) {
+        OWSRaiseException(InvalidMessageException, @"%@", error.localizedDescription);
+    }
+    return result;
 }
 
 - (NSString *)theirSignalId

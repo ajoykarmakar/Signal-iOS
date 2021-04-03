@@ -1,5 +1,5 @@
 //
-//  Copyright (c) 2020 Open Whisper Systems. All rights reserved.
+//  Copyright (c) 2021 Open Whisper Systems. All rights reserved.
 //
 
 import Foundation
@@ -13,61 +13,13 @@ import SignalServiceKit
 @objc
 public class AccountManager: NSObject {
 
-    // MARK: - Dependencies
-
-    var profileManager: OWSProfileManager {
-        return OWSProfileManager.shared()
-    }
-
-    private var networkManager: TSNetworkManager {
-        return SSKEnvironment.shared.networkManager
-    }
-
-    private var preferences: OWSPreferences {
-        return Environment.shared.preferences
-    }
-
-    private var tsAccountManager: TSAccountManager {
-        return TSAccountManager.shared()
-    }
-
-    private var accountServiceClient: AccountServiceClient {
-        return SSKEnvironment.shared.accountServiceClient
-    }
-
-    private var storageServiceManager: StorageServiceManagerProtocol {
-        return SSKEnvironment.shared.storageServiceManager
-    }
-
-    private var deviceService: DeviceService {
-        return DeviceService.shared
-    }
-
-    var pushRegistrationManager: PushRegistrationManager {
-        return AppEnvironment.shared.pushRegistrationManager
-    }
-
-    var readReceiptManager: OWSReadReceiptManager {
-        return OWSReadReceiptManager.shared()
-    }
-
-    var identityManager: OWSIdentityManager {
-        return SSKEnvironment.shared.identityManager
-    }
-
-    var databaseStorage: SDSDatabaseStorage {
-        return SDSDatabaseStorage.shared
-    }
-
-    // MARK: -
-
     @objc
     public override init() {
         super.init()
 
         SwiftSingletons.register(self)
 
-        AppReadiness.runNowOrWhenAppDidBecomeReady {
+        AppReadiness.runNowOrWhenAppDidBecomeReadySync {
             if self.tsAccountManager.isRegistered {
                 self.recordUuidIfNecessary()
             }
@@ -126,6 +78,8 @@ public class AccountManager: NSObject {
                 // not deployed to production yet.
                 if error.httpStatusCode == 404 {
                     Logger.warn("404 while requesting preauthChallenge: \(error)")
+                } else if error.isNetworkFailureOrTimeout {
+                    Logger.warn("Network failure while requesting preauthChallenge: \(error)")
                 } else {
                     fallthrough
                 }
@@ -214,7 +168,7 @@ public class AccountManager: NSObject {
                 // Note we *don't* return this promise. There's no need to block registration on
                 // it completing, and if there are any errors, it's durable.
                 firstly {
-                    self.profileManager.reuploadLocalProfilePromise()
+                    self.profileManagerImpl.reuploadLocalProfilePromise()
                 }.catch { error in
                     Logger.error("error: \(error)")
                 }
@@ -245,9 +199,9 @@ public class AccountManager: NSObject {
                 self.identityManager.storeIdentityKeyPair(provisionMessage.identityKeyPair,
                                                           transaction: transaction)
 
-                self.profileManager.setLocalProfileKey(provisionMessage.profileKey,
-                                                       wasLocallyInitiated: false,
-                                                       transaction: transaction)
+                self.profileManagerImpl.setLocalProfileKey(provisionMessage.profileKey,
+                                                           wasLocallyInitiated: false,
+                                                           transaction: transaction)
 
                 if let areReadReceiptsEnabled = provisionMessage.areReadReceiptsEnabled {
                     self.readReceiptManager.setAreReadReceiptsEnabled(areReadReceiptsEnabled,
@@ -279,14 +233,14 @@ public class AccountManager: NSObject {
                 }
             }
         }.then(on: .global()) {
-            self.deviceService.updateSecondaryDeviceCapabilities()
+            self.serviceClient.updateSecondaryDeviceCapabilities()
         }.done {
             self.completeRegistration()
         }.then { _ -> Promise<Void> in
             BenchEventStart(title: "waiting for initial storage service restore", eventId: "initial-storage-service-restore")
 
             self.databaseStorage.asyncWrite { transaction in
-                OWSSyncManager.shared().sendKeysSyncRequestMessage(transaction: transaction)
+                OWSSyncManager.shared.sendKeysSyncRequestMessage(transaction: transaction)
             }
 
             let storageServiceRestorePromise = firstly {
@@ -306,7 +260,7 @@ public class AccountManager: NSObject {
             BenchEventStart(title: "waiting for initial contact and group sync", eventId: "initial-contact-sync")
 
             let initialSyncMessagePromise = firstly {
-                OWSSyncManager.shared().sendInitialSyncRequestsAwaitingCreatedThreadOrdering(timeoutSeconds: 60)
+                OWSSyncManager.shared.sendInitialSyncRequestsAwaitingCreatedThreadOrdering(timeoutSeconds: 60)
             }.done(on: .global() ) { orderedThreadIds in
                 Logger.debug("orderedThreadIds: \(orderedThreadIds)")
                 // Maintain the remote sort ordering of threads by inserting `syncedThread` messages
@@ -403,9 +357,9 @@ public class AccountManager: NSObject {
         databaseStorage.write { transaction in
             self.identityManager.storeIdentityKeyPair(identityKeyPair,
                                                       transaction: transaction)
-            self.profileManager.setLocalProfileKey(profileKey,
-                                                   wasLocallyInitiated: false,
-                                                   transaction: transaction)
+            self.profileManagerImpl.setLocalProfileKey(profileKey,
+                                                       wasLocallyInitiated: false,
+                                                       transaction: transaction)
             self.tsAccountManager.setStoredServerAuthToken(serverAuthToken,
                                                            deviceId: 1,
                                                            transaction: transaction)
@@ -422,7 +376,7 @@ public class AccountManager: NSObject {
 
     private func syncPushTokens() -> Promise<Void> {
         Logger.info("")
-        let job = SyncPushTokensJob(accountManager: self, preferences: self.preferences)
+        let job = SyncPushTokensJob()
         job.uploadOnlyIfStale = false
         return job.run()
     }

@@ -1,5 +1,5 @@
 //
-//  Copyright (c) 2020 Open Whisper Systems. All rights reserved.
+//  Copyright (c) 2021 Open Whisper Systems. All rights reserved.
 //
 
 import Foundation
@@ -9,18 +9,6 @@ import PromiseKit
 
 @objc
 public extension DebugUIStress {
-
-    // MARK: - Dependencies
-
-    private class var databaseStorage: SDSDatabaseStorage {
-        return SDSDatabaseStorage.shared
-    }
-
-    private class var tsAccountManager: TSAccountManager {
-        return .shared()
-    }
-
-    // MARK: -
 
     private static func nameForClonedGroup(_ groupThread: TSGroupThread) -> String {
         guard let groupName = groupThread.groupModel.groupName else {
@@ -270,6 +258,27 @@ public extension DebugUIStress {
             owsFailDebug("Error: \(error)")
         }
     }
+
+    class func logMembership(_ groupThread: TSGroupThread) {
+        let groupMembership = groupThread.groupModel.groupMembership
+        let uuids = groupMembership.allMembersOfAnyKind.compactMap { $0.uuid }
+        let phoneNumbers = groupMembership.allMembersOfAnyKind.compactMap { $0.phoneNumber }
+        Logger.info("uuids: \(uuids.map { $0.uuidString }.joined(separator: "\n")).")
+        Logger.info("phoneNumbers: \(phoneNumbers.joined(separator: "\n")).")
+    }
+
+    class func deleteOtherProfiles() {
+        databaseStorage.write { transaction in
+            let profiles = OWSUserProfile.anyFetchAll(transaction: transaction)
+            for profile in profiles {
+                guard !OWSUserProfile.isLocalProfileAddress(profile.address) else {
+                    continue
+                }
+                Logger.verbose("Deleting: \(profile.address)")
+                profile.anyRemove(transaction: transaction)
+            }
+        }
+    }
 }
 
 // MARK: -
@@ -308,8 +317,8 @@ class GroupThreadPicker: OWSTableViewController {
     }
 
     func rebuildTableContents() {
-        let contactsManager = SSKEnvironment.shared.contactsManager
-        let databaseStorage = SSKEnvironment.shared.databaseStorage
+        let contactsManager = Self.contactsManager
+        let databaseStorage = Self.databaseStorage
 
         let contents = OWSTableContents()
         let section = OWSTableSection()

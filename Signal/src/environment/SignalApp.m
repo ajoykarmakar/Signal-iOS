@@ -28,7 +28,7 @@ NSString *const kNSUserDefaults_DidTerminateKey = @"kNSUserDefaults_DidTerminate
 
 @implementation SignalApp
 
-+ (instancetype)sharedApp
++ (instancetype)shared
 {
     static SignalApp *sharedApp = nil;
     static dispatch_once_t onceToken;
@@ -50,7 +50,7 @@ NSString *const kNSUserDefaults_DidTerminateKey = @"kNSUserDefaults_DidTerminate
 
     [self handleCrashDetection];
 
-    [AppReadiness runNowOrWhenAppDidBecomeReady:^{ [self warmCachesAsync]; }];
+    AppReadinessRunNowOrWhenAppDidBecomeReadySync(^{ [self warmCachesAsync]; });
 
     return self;
 }
@@ -87,30 +87,6 @@ NSString *const kNSUserDefaults_DidTerminateKey = @"kNSUserDefaults_DidTerminate
     OWSLogInfo(@"");
     NSUserDefaults *userDefaults = CurrentAppContext().appUserDefaults;
     [userDefaults removeObjectForKey:kNSUserDefaults_DidTerminateKey];
-}
-
-#pragma mark - Dependencies
-
-- (SDSDatabaseStorage *)databaseStorage
-{
-    return SDSDatabaseStorage.shared;
-}
-
-+ (SDSDatabaseStorage *)databaseStorage
-{
-    return SDSDatabaseStorage.shared;
-}
-
-- (TSAccountManager *)tsAccountManager
-{
-    OWSAssertDebug(SSKEnvironment.shared.tsAccountManager);
-
-    return SSKEnvironment.shared.tsAccountManager;
-}
-
-- (OWSBackup *)backup
-{
-    return AppEnvironment.shared.backup;
 }
 
 #pragma mark -
@@ -189,7 +165,12 @@ NSString *const kNSUserDefaults_DidTerminateKey = @"kNSUserDefaults_DidTerminate
     DispatchMainThreadSafe(^{
         if (self.conversationSplitViewController.visibleThread) {
             if ([self.conversationSplitViewController.visibleThread.uniqueId isEqualToString:thread.uniqueId]) {
-                [self.conversationSplitViewController.selectedConversationViewController popKeyBoard];
+                ConversationViewController *conversationView
+                    = self.conversationSplitViewController.selectedConversationViewController;
+                [conversationView popKeyBoard];
+                if (action == ConversationViewActionUpdateDraft) {
+                    [conversationView reloadDraft];
+                }
                 return;
             }
         }
@@ -286,25 +267,15 @@ NSString *const kNSUserDefaults_DidTerminateKey = @"kNSUserDefaults_DidTerminate
     UITapGestureRecognizer *registerGesture =
         [[UITapGestureRecognizer alloc] initWithTarget:accountManager action:@selector(fakeRegistration)];
     registerGesture.numberOfTapsRequired = 8;
+    registerGesture.delaysTouchesEnded = NO;
     [navController.view addGestureRecognizer:registerGesture];
 #else
     UITapGestureRecognizer *submitLogGesture = [[UITapGestureRecognizer alloc] initWithTarget:[Pastelog class]
                                                                                        action:@selector(submitLogs)];
     submitLogGesture.numberOfTapsRequired = 8;
+    submitLogGesture.delaysTouchesEnded = NO;
     [navController.view addGestureRecognizer:submitLogGesture];
 #endif
-
-    AppDelegate *appDelegate = (AppDelegate *)[UIApplication sharedApplication].delegate;
-    appDelegate.window.rootViewController = navController;
-
-    self.conversationSplitViewController = nil;
-}
-
-- (void)showBackupRestoreView
-{
-    BackupRestoreViewController *backupRestoreVC = [BackupRestoreViewController new];
-    OWSNavigationController *navController =
-        [[OWSNavigationController alloc] initWithRootViewController:backupRestoreVC];
 
     AppDelegate *appDelegate = (AppDelegate *)[UIApplication sharedApplication].delegate;
     appDelegate.window.rootViewController = navController;
@@ -330,11 +301,7 @@ NSString *const kNSUserDefaults_DidTerminateKey = @"kNSUserDefaults_DidTerminate
     if (onboarding.isComplete) {
         [onboarding markAsOnboarded];
 
-        if (self.backup.hasPendingRestoreDecision) {
-            [self showBackupRestoreView];
-        } else {
-            [self showConversationSplitView];
-        }
+        [self showConversationSplitView];
     } else {
         [self showOnboardingView:onboarding];
     }

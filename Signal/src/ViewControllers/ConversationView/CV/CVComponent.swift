@@ -34,27 +34,27 @@ public protocol CVComponent: class {
                         componentDelegate: CVComponentDelegate,
                         componentView: CVComponentView,
                         renderItem: CVRenderItem,
-                        swipeToReplyState: CVSwipeToReplyState) -> CVPanHandler?
+                        messageSwipeActionState: CVMessageSwipeActionState) -> CVPanHandler?
     func startPanGesture(sender: UIPanGestureRecognizer,
                          panHandler: CVPanHandler,
                          componentDelegate: CVComponentDelegate,
                          componentView: CVComponentView,
                          renderItem: CVRenderItem,
-                         swipeToReplyState: CVSwipeToReplyState)
+                         messageSwipeActionState: CVMessageSwipeActionState)
     func handlePanGesture(sender: UIPanGestureRecognizer,
                           panHandler: CVPanHandler,
                           componentDelegate: CVComponentDelegate,
                           componentView: CVComponentView,
                           renderItem: CVRenderItem,
-                          swipeToReplyState: CVSwipeToReplyState)
+                          messageSwipeActionState: CVMessageSwipeActionState)
 
     func cellDidLayoutSubviews(componentView: CVComponentView,
                                renderItem: CVRenderItem,
-                               swipeToReplyState: CVSwipeToReplyState)
+                               messageSwipeActionState: CVMessageSwipeActionState)
 
     func cellDidBecomeVisible(componentView: CVComponentView,
                               renderItem: CVRenderItem,
-                              swipeToReplyState: CVSwipeToReplyState)
+                              messageSwipeActionState: CVMessageSwipeActionState)
 }
 
 // MARK: -
@@ -69,10 +69,19 @@ public protocol CVRootComponent: CVComponent {
                    cellMeasurement: CVCellMeasurement,
                    componentDelegate: CVComponentDelegate,
                    cellSelection: CVCellSelection,
-                   swipeToReplyState: CVSwipeToReplyState,
+                   messageSwipeActionState: CVMessageSwipeActionState,
                    componentView: CVComponentView)
 
     var isDedicatedCell: Bool { get }
+}
+
+// MARK: -
+
+public protocol CVAccessibilityComponent: CVComponent {
+    var accessibilityDescription: String { get }
+
+    // TODO: We should have a getter for "accessiblity actions",
+    //       presumably as [CVMessageAction].
 }
 
 // MARK: -
@@ -156,7 +165,7 @@ public class CVComponentBase: NSObject {
                                componentDelegate: CVComponentDelegate,
                                componentView: CVComponentView,
                                renderItem: CVRenderItem,
-                               swipeToReplyState: CVSwipeToReplyState) -> CVPanHandler? {
+                               messageSwipeActionState: CVMessageSwipeActionState) -> CVPanHandler? {
         Logger.verbose("Ignoring pan.")
         return nil
     }
@@ -166,7 +175,7 @@ public class CVComponentBase: NSObject {
                                 componentDelegate: CVComponentDelegate,
                                 componentView: CVComponentView,
                                 renderItem: CVRenderItem,
-                                swipeToReplyState: CVSwipeToReplyState) {
+                                messageSwipeActionState: CVMessageSwipeActionState) {
         owsFailDebug("No pan in progress.")
     }
 
@@ -175,19 +184,19 @@ public class CVComponentBase: NSObject {
                                  componentDelegate: CVComponentDelegate,
                                  componentView: CVComponentView,
                                  renderItem: CVRenderItem,
-                                 swipeToReplyState: CVSwipeToReplyState) {
+                                 messageSwipeActionState: CVMessageSwipeActionState) {
         owsFailDebug("No pan in progress.")
     }
 
     public func cellDidLayoutSubviews(componentView: CVComponentView,
                                       renderItem: CVRenderItem,
-                                      swipeToReplyState: CVSwipeToReplyState) {
+                                      messageSwipeActionState: CVMessageSwipeActionState) {
         // Do nothing.
     }
 
     public func cellDidBecomeVisible(componentView: CVComponentView,
                                      renderItem: CVRenderItem,
-                                     swipeToReplyState: CVSwipeToReplyState) {
+                                     messageSwipeActionState: CVMessageSwipeActionState) {
         // Do nothing.
     }
 
@@ -230,23 +239,6 @@ extension CVComponentBase: CVNode {
 
     var isTextOnlyMessage: Bool { messageCellType == .textOnlyMessage }
 
-    func accessibilityLabel(description descriptionParam: String?) -> String {
-        let description = { () -> String in
-            if let description = descriptionParam,
-               !description.isEmpty {
-                return description
-            }
-            return NSLocalizedString("ACCESSIBILITY_LABEL_MESSAGE", comment: "Accessibility label for message.")
-        }()
-        if let authorName = itemViewState.accessibilityAuthorName,
-           !authorName.isEmpty {
-            return "\(authorName) \(description)"
-        } else {
-            owsFailDebug("Missing sender name.")
-            return description
-        }
-    }
-
     // This var should only be accessed for messages.
     var bubbleColorForMessage: UIColor {
         guard let message = interaction as? TSMessage else {
@@ -254,25 +246,6 @@ extension CVComponentBase: CVNode {
             return conversationStyle.bubbleColor(isIncoming: true)
         }
         return conversationStyle.bubbleColor(message: message)
-    }
-}
-
-// MARK: -
-
-extension CVComponentBase {
-
-    // MARK: - Dependencies
-
-    static var contactsManager: OWSContactsManager {
-        return Environment.shared.contactsManager
-    }
-
-    static var profileManager: OWSProfileManager {
-        return .shared()
-    }
-
-    static var attachmentDownloads: OWSAttachmentDownloads {
-        return SSKEnvironment.shared.attachmentDownloads
     }
 }
 

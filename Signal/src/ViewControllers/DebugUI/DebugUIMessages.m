@@ -14,13 +14,11 @@
 #import <SignalMessaging/Environment.h>
 #import <SignalMessaging/OWSTableViewController.h>
 #import <SignalServiceKit/MIMETypeUtil.h>
-#import <SignalServiceKit/OWSBatchMessageProcessor.h>
 #import <SignalServiceKit/OWSDisappearingConfigurationUpdateInfoMessage.h>
 #import <SignalServiceKit/OWSDisappearingMessagesConfiguration.h>
 #import <SignalServiceKit/OWSGroupInfoRequestMessage.h>
 #import <SignalServiceKit/OWSMessageUtils.h>
 #import <SignalServiceKit/OWSVerificationStateChangeMessage.h>
-#import <SignalServiceKit/SSKSessionStore.h>
 #import <SignalServiceKit/SignalServiceKit-Swift.h>
 #import <SignalServiceKit/TSIncomingMessage.h>
 #import <SignalServiceKit/TSInvalidIdentityKeyReceivingErrorMessage.h>
@@ -314,45 +312,6 @@ typedef NS_CLOSED_ENUM(NSUInteger, MessageContentType) {
 
     return [OWSTableSection sectionWithTitle:self.name items:items];
 }
-
-#pragma mark - Dependencies
-
-+ (MessageSenderJobQueue *)messageSenderJobQueue
-{
-    return SSKEnvironment.shared.messageSenderJobQueue;
-}
-
-- (MessageSenderJobQueue *)messageSenderJobQueue
-{
-    return self.class.messageSenderJobQueue;
-}
-
-+ (SDSDatabaseStorage *)databaseStorage
-{
-    return SDSDatabaseStorage.shared;
-}
-
-- (SDSDatabaseStorage *)databaseStorage
-{
-    return self.class.databaseStorage;
-}
-
-+ (void)readWithBlock:(void (^)(SDSAnyReadTransaction *transaction))block
-{
-    [self.databaseStorage readWithBlock:block];
-}
-
-- (void)readWithBlock:(void (^)(SDSAnyReadTransaction *transaction))block
-{
-    [self.class readWithBlock:block];
-}
-
-+ (id<GroupsV2>)groupsV2
-{
-    return SSKEnvironment.shared.groupsV2;
-}
-
-#pragma mark -
 
 + (void)sendMessages:(NSUInteger)count toAllMembersOfGroup:(TSGroupThread *)groupThread
 {
@@ -1772,7 +1731,7 @@ typedef NS_CLOSED_ENUM(NSUInteger, MessageContentType) {
                 thread:(TSThread *)thread
            messageBody:(nullable NSString *)messageBody
 {
-    [self readWithBlock:^(SDSAnyReadTransaction *transaction) {
+    [self.databaseStorage readWithBlock:^(SDSAnyReadTransaction *transaction) {
         NSArray<SignalAttachment *> *attachments = @[];
         if (attachment != nil) {
             attachments = @[ attachment ];
@@ -4019,13 +3978,13 @@ typedef OWSContact * (^OWSContactBlock)(SDSAnyWriteTransaction *transaction);
         return;
     }
 
-    DatabaseStorageWrite(SDSDatabaseStorage.shared, ^(SDSAnyWriteTransaction *transaction) {
-        [SSKEnvironment.shared.batchMessageProcessor enqueueEnvelopeData:envelopeData
-                                                           plaintextData:plaintextData
-                                                         wasReceivedByUD:NO
-                                                 serverDeliveryTimestamp:0
-                                                             transaction:transaction];
-    });
+    [MessageProcessor.shared processDecryptedEnvelopeData:envelopeData
+                                            plaintextData:plaintextData
+                                  serverDeliveryTimestamp:0
+                                          wasReceivedByUD:NO
+                                               completion:^(NSError *error) {
+
+                                               }];
 }
 
 + (void)performRandomActions:(NSUInteger)counter thread:(TSThread *)thread
@@ -4808,7 +4767,7 @@ typedef OWSContact * (^OWSContactBlock)(SDSAnyWriteTransaction *transaction);
         [attachments addObject:attachment];
     }
 
-    [self readWithBlock:^(SDSAnyReadTransaction *transaction) {
+    [self.databaseStorage readWithBlock:^(SDSAnyReadTransaction *transaction) {
         TSOutgoingMessage *message = [ThreadUtil
             enqueueMessageWithBody:[[MessageBody alloc] initWithText:messageBody ranges:MessageBodyRanges.empty]
                   mediaAttachments:attachments

@@ -26,7 +26,7 @@ extension ConversationSettingsViewController {
             owsFailDebug("Invalid thread.")
             return false
         }
-        return contactsManager.hasSignalAccount(for: contactThread.contactAddress)
+        return contactsManagerImpl.hasSignalAccount(for: contactThread.contactAddress)
     }
 
     private func buildCell(name: String, icon: ThemeIcon,
@@ -46,7 +46,6 @@ extension ConversationSettingsViewController {
     func updateTableContents() {
 
         let contents = OWSTableContents()
-        contents.title = NSLocalizedString("CONVERSATION_SETTINGS", comment: "title for conversation settings screen")
 
         let isNoteToSelf = thread.isNoteToSelf
 
@@ -103,7 +102,7 @@ extension ConversationSettingsViewController {
         let isNoteToSelf = thread.isNoteToSelf
 
         if let contactThread = thread as? TSContactThread,
-            contactsManager.supportsContactEditing && !hasExistingContact {
+            contactsManagerImpl.supportsContactEditing && !hasExistingContact {
             section.add(OWSTableItem(customCellBlock: { [weak self] in
                 guard let self = self else {
                     owsFailDebug("Missing self")
@@ -204,7 +203,7 @@ extension ConversationSettingsViewController {
                                             owsFailDebug("Missing self")
                                             return
                                         }
-                                        if self.contactsManager.supportsContactEditing {
+                                        if self.contactsManagerImpl.supportsContactEditing {
                                             self.presentContactViewController()
                                         }
             }))
@@ -254,99 +253,37 @@ extension ConversationSettingsViewController {
     private func buildDisappearingMessagesSection(to section: OWSTableSection) {
 
         let canEditConversationAttributes = self.canEditConversationAttributes
+        let disappearingMessagesConfiguration = self.disappearingMessagesConfiguration
 
-        let disappearingMessagesConfiguration: OWSDisappearingMessagesConfiguration = self.disappearingMessagesConfiguration
-        let switchAction = #selector(disappearingMessagesSwitchValueDidChange)
-        section.add(OWSTableItem(customCellBlock: { [weak self] in
-            guard let self = self else {
-                owsFailDebug("Missing self")
-                return OWSTableItem.newCell()
-            }
-            let cell = OWSTableItem.newCell()
-            cell.preservesSuperviewLayoutMargins = true
-            cell.contentView.preservesSuperviewLayoutMargins = true
-            cell.selectionStyle = .none
-
-            let icon: ThemeIcon = (disappearingMessagesConfiguration.isEnabled
-                ? .settingsTimer
-                : .settingsTimerDisabled)
-            let iconView = OWSTableItem.imageView(forIcon: icon)
-
-            let rowLabel = UILabel()
-            rowLabel.text = NSLocalizedString(
-                "DISAPPEARING_MESSAGES", comment: "table cell label in conversation settings")
-            rowLabel.textColor = Theme.primaryTextColor
-            rowLabel.font = OWSTableItem.primaryLabelFont
-            rowLabel.lineBreakMode = .byTruncatingTail
-
-            let switchView = UISwitch()
-            switchView.isOn = disappearingMessagesConfiguration.isEnabled
-            switchView.addTarget(self, action: switchAction, for: .valueChanged)
-            switchView.isEnabled = canEditConversationAttributes
-
-            let topRow = UIStackView(arrangedSubviews: [ iconView, rowLabel, switchView ])
-            topRow.spacing = self.iconSpacingLarge
-            topRow.alignment = .center
-            cell.contentView.addSubview(topRow)
-            topRow.autoPinEdgesToSuperviewMargins()
-
-            switchView.accessibilityIdentifier = UIView.accessibilityIdentifier(in: self, name: "disappearing_messages_switch")
-            cell.accessibilityIdentifier = UIView.accessibilityIdentifier(in: self, name: "disappearing_messages")
-
-            return cell
-            },
-                                 actionBlock: nil))
-
-        if disappearingMessagesConfiguration.isEnabled {
-            let sliderAction = #selector(durationSliderDidChange)
-            section.add(OWSTableItem(customCellBlock: { [weak self] in
-                guard let self = self else {
-                    owsFailDebug("Missing self")
-                    return OWSTableItem.newCell()
-                }
-                let cell = OWSTableItem.newCell()
-                cell.preservesSuperviewLayoutMargins = true
-                cell.contentView.preservesSuperviewLayoutMargins = true
-                cell.selectionStyle = .none
-
-                let iconView = OWSTableItem.imageView(forIcon: .settingsTimer)
-                let rowLabel = self.disappearingMessagesDurationLabel
-                self.updateDisappearingMessagesDurationLabel()
-                rowLabel.textColor = Theme.primaryTextColor
-                rowLabel.font = OWSTableItem.primaryLabelFont
-                // don't truncate useful duration info which is in the tail
-                rowLabel.lineBreakMode = .byTruncatingTail
-
-                let topRow = UIStackView(arrangedSubviews: [ iconView, rowLabel ])
-                topRow.spacing = self.iconSpacingLarge
-                topRow.alignment = .center
-                cell.contentView.addSubview(topRow)
-                topRow.autoPinEdges(toSuperviewMarginsExcludingEdge: .bottom)
-
-                let slider = UISlider()
-                slider.maximumValue
-                    = Float(self.disappearingMessagesDurations.count - 1)
-                slider.minimumValue = 0
-                slider.isContinuous = true // NO fires change event only once you let go
-                slider.value = Float(self.disappearingMessagesConfiguration.durationIndex)
-                slider.addTarget(self, action: sliderAction, for: .valueChanged)
-                cell.contentView.addSubview(slider)
-                slider.autoPinEdge(.top, to: .bottom, of: topRow, withOffset: 6)
-                slider.autoPinEdge(.leading, to: .leading, of: rowLabel)
-                slider.autoPinTrailingToSuperviewMargin()
-                slider.autoPinBottomToSuperviewMargin()
-                slider.isEnabled = canEditConversationAttributes
-
-                slider.accessibilityIdentifier = UIView.accessibilityIdentifier(in: self, name: "disappearing_messages_slider")
-                cell.accessibilityIdentifier = UIView.accessibilityIdentifier(in: self, name: "disappearing_messages_duration")
-
+        section.add(.init(
+            customCellBlock: { [weak self] in
+                guard let self = self else { return UITableViewCell() }
+                let cell = OWSTableItem.buildIconNameCell(
+                    icon: disappearingMessagesConfiguration.isEnabled
+                        ? .settingsTimer
+                        : .settingsTimerDisabled,
+                    itemName: NSLocalizedString(
+                        "DISAPPEARING_MESSAGES",
+                        comment: "table cell label in conversation settings"
+                    ),
+                    accessoryText: disappearingMessagesConfiguration.isEnabled
+                        ? NSString.formatDurationSeconds(disappearingMessagesConfiguration.durationSeconds, useShortFormat: true)
+                        : CommonStrings.switchOff,
+                    accessoryType: .disclosureIndicator,
+                    accessoryImage: nil,
+                    customColor: canEditConversationAttributes ? nil : Theme.secondaryTextAndIconColor,
+                    accessibilityIdentifier: UIView.accessibilityIdentifier(in: self, name: "disappearing_messages")
+                )
+                cell.isUserInteractionEnabled = canEditConversationAttributes
                 return cell
-                },
-                                     actionBlock: nil))
-        }
-
-        section.footerTitle = NSLocalizedString(
-            "DISAPPEARING_MESSAGES_DESCRIPTION", comment: "subheading in conversation settings")
+            }, actionBlock: { [weak self] in
+                let vc = DisappearingMessagesTimerSettingsViewController(configuration: disappearingMessagesConfiguration) { configuration in
+                    self?.disappearingMessagesConfiguration = configuration
+                    self?.updateTableContents()
+                }
+                self?.presentFormSheet(OWSNavigationController(rootViewController: vc), animated: true)
+            }
+        ))
     }
 
     private func addColorPickerItems(to section: OWSTableSection) {
@@ -372,8 +309,6 @@ extension ConversationSettingsViewController {
 
     private func buildNotificationsSection() -> OWSTableSection {
         let section = OWSTableSection()
-        section.customHeaderHeight = 14
-        section.customFooterHeight = 14
 
         section.add(OWSTableItem(customCellBlock: { [weak self] in
             guard let self = self else {
@@ -403,8 +338,11 @@ extension ConversationSettingsViewController {
                                                comment: "Indicates that the current thread is not muted.")
 
             let now = Date()
-            if let mutedUntilDate = self.thread.mutedUntilDate,
-                mutedUntilDate > now {
+
+            if self.thread.mutedUntilTimestamp == TSThread.alwaysMutedTimestamp {
+                muteStatus = NSLocalizedString("CONVERSATION_SETTINGS_MUTED_ALWAYS",
+                                               comment: "Indicates that this thread is muted forever.")
+            } else if let mutedUntilDate = self.thread.mutedUntilDate, mutedUntilDate > now {
                 let calendar = Calendar.current
                 let muteUntilComponents = calendar.dateComponents([.year, .month, .day], from: mutedUntilDate)
                 let nowComponents = calendar.dateComponents([.year, .month, .day], from: now)
@@ -476,7 +414,6 @@ extension ConversationSettingsViewController {
 
     private func buildBlockAndLeaveSection() -> OWSTableSection {
         let section = OWSTableSection()
-        section.customHeaderHeight = 14
 
         section.footerTitle = isGroupThread
             ? NSLocalizedString("CONVERSATION_SETTINGS_BLOCK_AND_LEAVE_SECTION_FOOTER",
@@ -549,7 +486,6 @@ extension ConversationSettingsViewController {
                                           contents: OWSTableContents) {
 
         let section = OWSTableSection()
-        section.customHeaderHeight = 14
 
         section.add(OWSTableItem(customCellBlock: { [weak self] in
             guard let self = self else {
@@ -612,7 +548,7 @@ extension ConversationSettingsViewController {
 
     private func buildGroupMembershipSection(groupModel: TSGroupModel) -> OWSTableSection {
         let section = OWSTableSection()
-        section.customFooterHeight = 14
+        section.separatorInsetLeading = NSNumber(value: Float(Self.cellHInnerMargin + CGFloat(kSmallAvatarSize) + kContactCellAvatarTextMargin))
 
         guard let localAddress = tsAccountManager.localAddress else {
             owsFailDebug("Missing localAddress.")
@@ -633,12 +569,13 @@ extension ConversationSettingsViewController {
 
                 let iconView = OWSTableItem.buildIconInCircleView(icon: .settingsAddMembers,
                                                                   iconSize: kSmallAvatarSize,
-                                                                  innerIconSize: 22)
+                                                                  innerIconSize: 24,
+                                                                  iconTintColor: Theme.primaryTextColor)
 
                 let rowLabel = UILabel()
                 rowLabel.text = NSLocalizedString("CONVERSATION_SETTINGS_ADD_MEMBERS",
                                                   comment: "Label for 'add members' button in conversation settings view.")
-                rowLabel.textColor = Theme.accentBlueColor
+                rowLabel.textColor = Theme.primaryTextColor
                 rowLabel.font = OWSTableItem.primaryLabelFont
                 rowLabel.lineBreakMode = .byTruncatingTail
 
@@ -646,7 +583,8 @@ extension ConversationSettingsViewController {
                 contentRow.spacing = self.iconSpacingSmall
 
                 cell.contentView.addSubview(contentRow)
-                contentRow.autoPinEdgesToSuperviewMargins()
+                contentRow.autoPinWidthToSuperviewMargins()
+                contentRow.autoPinHeightToSuperview(withMargin: 7)
 
                 return cell
                 }) { [weak self] in
@@ -663,8 +601,8 @@ extension ConversationSettingsViewController {
                 verificationStateMap[memberAddress] = self.identityManager.verificationState(for: memberAddress,
                                                                                              transaction: transaction)
             }
-            allMembersSorted = self.contactsManager.sortSignalServiceAddresses(Array(allMembers),
-                                                                               transaction: transaction)
+            allMembersSorted = self.contactsManagerImpl.sortSignalServiceAddresses(Array(allMembers),
+                                                                                   transaction: transaction)
         }
 
         var membersToRender = [SignalServiceAddress]()
@@ -711,7 +649,6 @@ extension ConversationSettingsViewController {
                     return OWSTableItem.newCell()
                 }
                 let cell = ContactTableViewCell()
-                cell.setUseSmallAvatars()
 
                 let isGroupAdmin = groupMembership.isFullMemberAndAdministrator(memberAddress)
                 let isVerified = verificationState == .verified
@@ -729,7 +666,7 @@ extension ConversationSettingsViewController {
 
                 if isLocalUser {
                     // Use a custom avatar to avoid using the "note to self" icon.
-                    let customAvatar = OWSProfileManager.shared().localProfileAvatarImage() ?? OWSContactAvatarBuilder(forLocalUserWithDiameter: kSmallAvatarSize).buildDefaultImage()
+                    let customAvatar = Self.profileManagerImpl.localProfileAvatarImage() ?? OWSContactAvatarBuilder(forLocalUserWithDiameter: kSmallAvatarSize).buildDefaultImage()
                     cell.setCustomAvatar(customAvatar)
                     cell.setCustomName(NSLocalizedString("GROUP_MEMBER_LOCAL_USER",
                                                          comment: "Label indicating the local user."))
@@ -744,7 +681,7 @@ extension ConversationSettingsViewController {
                     cell.setAttributedSubtitle(cell.verifiedSubtitle())
                 } else if !memberAddress.isLocalAddress,
                           let bioForDisplay = (Self.databaseStorage.read { transaction in
-                    Self.profileManager.profileBioForDisplay(for: memberAddress, transaction: transaction)
+                    Self.profileManagerImpl.profileBioForDisplay(for: memberAddress, transaction: transaction)
                 }) {
                     cell.setAttributedSubtitle(NSAttributedString(string: bioForDisplay))
                 } else {
@@ -772,13 +709,13 @@ extension ConversationSettingsViewController {
 
                 let iconView = OWSTableItem.buildIconInCircleView(icon: .settingsShowAllMembers,
                                                                   iconSize: kSmallAvatarSize,
-                                                                  innerIconSize: 19,
-                                                                  iconTintColor: Theme.secondaryTextAndIconColor)
+                                                                  innerIconSize: 24,
+                                                                  iconTintColor: Theme.primaryTextColor)
 
                 let rowLabel = UILabel()
                 rowLabel.text = NSLocalizedString("CONVERSATION_SETTINGS_VIEW_ALL_MEMBERS",
                                                   comment: "Label for 'view all members' button in conversation settings view.")
-                rowLabel.textColor = Theme.secondaryTextAndIconColor
+                rowLabel.textColor = Theme.primaryTextColor
                 rowLabel.font = OWSTableItem.primaryLabelFont
                 rowLabel.lineBreakMode = .byTruncatingTail
 
@@ -786,7 +723,8 @@ extension ConversationSettingsViewController {
                 contentRow.spacing = self.iconSpacingSmall
 
                 cell.contentView.addSubview(contentRow)
-                contentRow.autoPinEdgesToSuperviewMargins()
+                contentRow.autoPinWidthToSuperviewMargins()
+                contentRow.autoPinHeightToSuperview(withMargin: 7)
 
                 return cell
                 }) { [weak self] in
@@ -801,8 +739,6 @@ extension ConversationSettingsViewController {
                                                     contents: OWSTableContents) {
 
         let section = OWSTableSection()
-        section.customHeaderHeight = 14
-        section.customFooterHeight = 14
 
         let itemTitle = (RemoteConfig.groupsV2InviteLinks
             ? NSLocalizedString("CONVERSATION_SETTINGS_MEMBER_REQUESTS_AND_INVITES",

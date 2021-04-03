@@ -19,6 +19,8 @@ class ConversationSplitViewController: UISplitViewController, ConversationSplit 
 
     @objc private(set) weak var selectedConversationViewController: ConversationViewController?
 
+    weak var navigationTransitionDelegate: UINavigationControllerDelegate?
+
     /// The thread, if any, that is currently presented in the view hieararchy. It may be currently
     /// covered by a modal presentation or a pushed view controller.
     @objc var selectedThread: TSThread? {
@@ -222,7 +224,16 @@ class ConversationSplitViewController: UISplitViewController, ConversationSplit 
             viewControllersToDisplay.append(vc)
             primaryNavController.setViewControllers(viewControllersToDisplay, animated: true)
         } else {
-            viewControllers[1] = vc
+            // There is a race condition at app launch where `isCollapsed` cannot be
+            // relied upon. This leads to a crash where viewControllers is empty, so
+            // setting index 1 is not possible. We know what the primary view controller
+            // should always be, so we attempt to fill it in when that happens. The only
+            // ways this could really be happening is if, somehow, before `viewControllers`
+            // is set in init this method is getting called OR this `viewControllers` is
+            // returning stale information. The latter seems most plausible, but is near
+            // impossible to reproduce.
+            owsAssertDebug(viewControllers.first == primaryNavController)
+            viewControllers = [primaryNavController, vc]
         }
 
         // If the detail VC is a nav controller, we want to keep track of
@@ -531,6 +542,22 @@ extension ConversationSplitViewController: UINavigationControllerDelegate {
         // the current conversation is no longer selected.
         guard isCollapsed, viewController is ConversationListViewController else { return }
         selectedConversationViewController = nil
+    }
+
+    func navigationController(_ navigationController: UINavigationController, interactionControllerFor animationController: UIViewControllerAnimatedTransitioning) -> UIViewControllerInteractiveTransitioning? {
+        return navigationTransitionDelegate?.navigationController?(
+            navigationController,
+            interactionControllerFor: animationController
+        )
+    }
+
+    func navigationController(_ navigationController: UINavigationController, animationControllerFor operation: UINavigationController.Operation, from fromVC: UIViewController, to toVC: UIViewController) -> UIViewControllerAnimatedTransitioning? {
+        return navigationTransitionDelegate?.navigationController?(
+            navigationController,
+            animationControllerFor: operation,
+            from: fromVC,
+            to: toVC
+        )
     }
 }
 

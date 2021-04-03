@@ -25,33 +25,6 @@ NS_ASSUME_NONNULL_BEGIN
 
 @implementation ThreadUtil
 
-#pragma mark - Dependencies
-
-+ (MessageSenderJobQueue *)messageSenderJobQueue
-{
-    return SSKEnvironment.shared.messageSenderJobQueue;
-}
-
-+ (SDSDatabaseStorage *)databaseStorage
-{
-    return SSKEnvironment.shared.databaseStorage;
-}
-
-+ (OWSProfileManager *)profileManager
-{
-    return SSKEnvironment.shared.profileManager;
-}
-
-+ (TSAccountManager *)tsAccountManager
-{
-    return SSKEnvironment.shared.tsAccountManager;
-}
-
-+ (MessageSender *)messageSender
-{
-    return SSKEnvironment.shared.messageSender;
-}
-
 #pragma mark - Durable Message Enqueue
 
 + (TSOutgoingMessage *)enqueueMessageWithBody:(MessageBody *)messageBody
@@ -340,14 +313,17 @@ NS_ASSUME_NONNULL_BEGIN
     OWSLogInfo(@"");
 
     DatabaseStorageWrite(self.databaseStorage, ^(SDSAnyWriteTransaction *transaction) {
-        [TSThread anyRemoveAllWithInstantationWithTransaction:transaction];
+        [TSThread anyEnumerateWithTransaction:transaction
+                                      batched:YES
+                                        block:^(TSThread *thread, BOOL *stop) {
+                                            [thread softDeleteThreadWithTransaction:transaction];
+                                        }];
         [TSInteraction anyRemoveAllWithInstantationWithTransaction:transaction];
         [TSAttachment anyRemoveAllWithInstantationWithTransaction:transaction];
-        [SignalRecipient anyRemoveAllWithInstantationWithTransaction:transaction];
-        
+
         // Deleting attachments above should be enough to remove any gallery items, but
         // we redunantly clean up *all* gallery items to be safe.
-        [AnyMediaGalleryFinder didRemoveAllContentWithTransaction:transaction];
+        [MediaGalleryManager didRemoveAllContentWithTransaction:transaction];
     });
     [TSAttachmentStream deleteAttachmentsFromDisk];
 }

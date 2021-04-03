@@ -6,23 +6,17 @@
 #import "Environment.h"
 #import "Theme.h"
 #import "VersionMigrations.h"
-#import <AxolotlKit/SessionCipher.h>
-#import <SignalMessaging/OWSDatabaseMigration.h>
 #import <SignalMessaging/OWSProfileManager.h>
 #import <SignalMessaging/SignalMessaging-Swift.h>
 #import <SignalMetadataKit/SignalMetadataKit-Swift.h>
 #import <SignalServiceKit/OWS2FAManager.h>
 #import <SignalServiceKit/OWSBackgroundTask.h>
-#import <SignalServiceKit/OWSBatchMessageProcessor.h>
 #import <SignalServiceKit/OWSBlockingManager.h>
 #import <SignalServiceKit/OWSDisappearingMessagesJob.h>
 #import <SignalServiceKit/OWSIdentityManager.h>
-#import <SignalServiceKit/OWSMessageDecrypter.h>
 #import <SignalServiceKit/OWSMessageManager.h>
-#import <SignalServiceKit/OWSMessageReceiver.h>
 #import <SignalServiceKit/OWSOutgoingReceiptManager.h>
 #import <SignalServiceKit/OWSReadReceiptManager.h>
-#import <SignalServiceKit/OWSStorage.h>
 #import <SignalServiceKit/SSKEnvironment.h>
 #import <SignalServiceKit/SignalServiceKit-Swift.h>
 #import <SignalServiceKit/TSSocketManager.h>
@@ -32,7 +26,7 @@ NS_ASSUME_NONNULL_BEGIN
 @implementation AppSetup
 
 + (void)setupEnvironmentWithAppSpecificSingletonBlock:(dispatch_block_t)appSpecificSingletonBlock
-                                  migrationCompletion:(dispatch_block_t)migrationCompletion
+                                  migrationCompletion:(void (^)(NSError *_Nullable error))migrationCompletion
 {
     OWSAssertDebug(appSpecificSingletonBlock);
     OWSAssertDebug(migrationCompletion);
@@ -52,10 +46,6 @@ NS_ASSUME_NONNULL_BEGIN
 
         StorageCoordinator *storageCoordinator = [StorageCoordinator new];
         SDSDatabaseStorage *databaseStorage = storageCoordinator.databaseStorage;
-        OWSPrimaryStorage *_Nullable primaryStorage;
-        if (databaseStorage.canLoadYdb) {
-            primaryStorage = databaseStorage.yapPrimaryStorage;
-        }
 
         // AFNetworking (via CFNetworking) spools it's attachments to NSTemporaryDirectory().
         // If you receive a media message while the device is locked, the download will fail if the temporary directory
@@ -82,9 +72,6 @@ NS_ASSUME_NONNULL_BEGIN
         SSKPreKeyStore *preKeyStore = [SSKPreKeyStore new];
         id<OWSUDManager> udManager = [OWSUDManagerImpl new];
         OWSMessageDecrypter *messageDecrypter = [OWSMessageDecrypter new];
-        SSKMessageDecryptJobQueue *messageDecryptJobQueue = [SSKMessageDecryptJobQueue new];
-        OWSBatchMessageProcessor *batchMessageProcessor = [OWSBatchMessageProcessor new];
-        OWSMessageReceiver *messageReceiver = [OWSMessageReceiver new];
         GroupsV2MessageProcessor *groupsV2MessageProcessor = [GroupsV2MessageProcessor new];
         TSSocketManager *socketManager = [[TSSocketManager alloc] init];
         TSAccountManager *tsAccountManager = [TSAccountManager new];
@@ -111,7 +98,6 @@ NS_ASSUME_NONNULL_BEGIN
         OWSSounds *sounds = [OWSSounds new];
         id<OWSProximityMonitoringManager> proximityMonitoringManager = [OWSProximityMonitoringManagerImpl new];
         OWSWindowManager *windowManager = [[OWSWindowManager alloc] initDefault];
-        MessageProcessing *messageProcessing = [MessageProcessing new];
         MessageFetcherJob *messageFetcherJob = [MessageFetcherJob new];
         BulkProfileFetch *bulkProfileFetch = [BulkProfileFetch new];
         BulkUUIDLookup *bulkUUIDLookup = [BulkUUIDLookup new];
@@ -123,6 +109,8 @@ NS_ASSUME_NONNULL_BEGIN
         ContactsViewHelper *contactsViewHelper = [ContactsViewHelper new];
         AppExpiry *appExpiry = [AppExpiry new];
         BroadcastMediaMessageJobQueue *broadcastMediaMessageJobQueue = [BroadcastMediaMessageJobQueue new];
+        MessageProcessor *messageProcessor = [MessageProcessor new];
+        OWSOrphanDataCleaner *orphanDataCleaner = [OWSOrphanDataCleaner new];
 
         [Environment setShared:[[Environment alloc] initWithAudioSession:audioSession
                                              incomingContactSyncJobQueue:incomingContactSyncJobQueue
@@ -133,9 +121,8 @@ NS_ASSUME_NONNULL_BEGIN
                                                                   sounds:sounds
                                                            windowManager:windowManager
                                                       contactsViewHelper:contactsViewHelper
-                                           broadcastMediaMessageJobQueue:broadcastMediaMessageJobQueue]];
-
-        [SMKEnvironment setShared:[[SMKEnvironment alloc] initWithAccountIdFinder:[OWSAccountIdFinder new]]];
+                                           broadcastMediaMessageJobQueue:broadcastMediaMessageJobQueue
+                                                       orphanDataCleaner:orphanDataCleaner]];
 
         [SSKEnvironment setShared:[[SSKEnvironment alloc] initWithContactsManager:contactsManager
                                                                linkPreviewManager:linkPreviewManager
@@ -143,7 +130,6 @@ NS_ASSUME_NONNULL_BEGIN
                                                             messageSenderJobQueue:messageSenderJobQueue
                                                        pendingReadReceiptRecorder:pendingReadReceiptRecorder
                                                                    profileManager:profileManager
-                                                                   primaryStorage:primaryStorage
                                                                    networkManager:networkManager
                                                                    messageManager:messageManager
                                                                   blockingManager:blockingManager
@@ -154,9 +140,6 @@ NS_ASSUME_NONNULL_BEGIN
                                                                       preKeyStore:preKeyStore
                                                                         udManager:udManager
                                                                  messageDecrypter:messageDecrypter
-                                                           messageDecryptJobQueue:messageDecryptJobQueue
-                                                            batchMessageProcessor:batchMessageProcessor
-                                                                  messageReceiver:messageReceiver
                                                          groupsV2MessageProcessor:groupsV2MessageProcessor
                                                                     socketManager:socketManager
                                                                  tsAccountManager:tsAccountManager
@@ -177,7 +160,6 @@ NS_ASSUME_NONNULL_BEGIN
                                                                    sskPreferences:sskPreferences
                                                                          groupsV2:groupsV2
                                                                    groupV2Updates:groupV2Updates
-                                                                messageProcessing:messageProcessing
                                                                 messageFetcherJob:messageFetcherJob
                                                                  bulkProfileFetch:bulkProfileFetch
                                                                    bulkUUIDLookup:bulkUUIDLookup
@@ -185,7 +167,8 @@ NS_ASSUME_NONNULL_BEGIN
                                                                   modelReadCaches:modelReadCaches
                                                               earlyMessageManager:earlyMessageManager
                                                         messagePipelineSupervisor:messagePipelineSupervisor
-                                                                        appExpiry:appExpiry]];
+                                                                        appExpiry:appExpiry
+                                                                 messageProcessor:messageProcessor]];
 
         appSpecificSingletonBlock();
 
@@ -193,7 +176,6 @@ NS_ASSUME_NONNULL_BEGIN
 
         // Register renamed classes.
         [NSKeyedUnarchiver setClass:[OWSUserProfile class] forClassName:[OWSUserProfile collection]];
-        [NSKeyedUnarchiver setClass:[OWSDatabaseMigration class] forClassName:[OWSDatabaseMigration collection]];
         [NSKeyedUnarchiver setClass:[ExperienceUpgrade class] forClassName:[ExperienceUpgrade collection]];
         [NSKeyedUnarchiver setClass:[ExperienceUpgrade class] forClassName:@"Signal.ExperienceUpgrade"];
         [NSKeyedUnarchiver setClass:[OWSGroupInfoRequestMessage class] forClassName:@"OWSSyncGroupsRequestMessage"];
@@ -215,7 +197,9 @@ NS_ASSUME_NONNULL_BEGIN
                     NSError *_Nullable error;
                     [databaseStorage.grdbStorage syncTruncatingCheckpointAndReturnError:&error];
                     if (error != nil) {
-                        OWSFailDebug(@"error: %@", error);
+                        OWSFailDebug(@"Failed to truncate database: %@", error);
+
+                        dispatch_async(dispatch_get_main_queue(), ^{ migrationCompletion(error); });
                     }
                 }
 
@@ -231,7 +215,7 @@ NS_ASSUME_NONNULL_BEGIN
                         if (StorageCoordinator.dataStoreForUI == DataStoreGrdb) {
                             [SSKEnvironment.shared warmCaches];
                         }
-                        migrationCompletion();
+                        migrationCompletion(nil);
 
                         OWSAssertDebug(backgroundTask);
                         backgroundTask = nil;
@@ -240,11 +224,7 @@ NS_ASSUME_NONNULL_BEGIN
             });
         };
 
-        if (databaseStorage.canLoadYdb) {
-            [OWSStorage registerExtensionsWithCompletionBlock:completionBlock];
-        } else {
-            completionBlock();
-        }
+        completionBlock();
     });
 }
 

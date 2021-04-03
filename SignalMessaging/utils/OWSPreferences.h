@@ -1,5 +1,5 @@
 //
-//  Copyright (c) 2020 Open Whisper Systems. All rights reserved.
+//  Copyright (c) 2021 Open Whisper Systems. All rights reserved.
 //
 
 NS_ASSUME_NONNULL_BEGIN
@@ -7,10 +7,10 @@ NS_ASSUME_NONNULL_BEGIN
 /**
  * The users privacy preference for what kind of content to show in lock screen notifications.
  */
-typedef NS_CLOSED_ENUM(NSUInteger, NotificationType){
-    NotificationNoNameNoPreview,
-    NotificationNameNoPreview,
-    NotificationNamePreview,
+typedef NS_CLOSED_ENUM(NSUInteger, NotificationType) {
+    NotificationNoNameNoPreview = 0,
+    NotificationNameNoPreview = 1,
+    NotificationNamePreview = 2,
 };
 
 NSString *NSStringForNotificationType(NotificationType value);
@@ -23,7 +23,6 @@ extern NSString *const OWSPreferencesCallLoggingDidChangeNotification;
 @class SDSAnyReadTransaction;
 @class SDSAnyWriteTransaction;
 @class SDSKeyValueStore;
-@class YapDatabaseReadWriteTransaction;
 
 @interface OWSPreferences : NSObject
 
@@ -34,14 +33,6 @@ extern NSString *const OWSPreferencesCallLoggingDidChangeNotification;
 - (void)removeAllValues;
 
 #pragma mark - Specific Preferences
-
-+ (BOOL)isReadyForAppExtensions;
-
-+ (BOOL)isYdbReadyForAppExtensions;
-+ (void)setIsYdbReadyForAppExtensions;
-
-+ (BOOL)isGrdbReadyForAppExtensions;
-+ (void)setIsGrdbReadyForAppExtensions;
 
 + (BOOL)isAudibleErrorLoggingEnabled;
 + (void)setIsAudibleErrorLoggingEnabled:(BOOL)value;
@@ -98,10 +89,6 @@ extern NSString *const OWSPreferencesCallLoggingDidChangeNotification;
 
 - (BOOL)isSystemCallLogEnabled;
 - (void)setIsSystemCallLogEnabled:(BOOL)value;
-
-#pragma mark - Legacy CallKit settings
-
-- (void)applyCallLoggingSettingsForLegacyUsersWithTransaction:(YapDatabaseReadWriteTransaction *)transaction;
 
 #pragma mark direct call connectivity (non-TURN)
 

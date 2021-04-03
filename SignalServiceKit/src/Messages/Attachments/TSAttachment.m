@@ -1,5 +1,5 @@
 //
-//  Copyright (c) 2020 Open Whisper Systems. All rights reserved.
+//  Copyright (c) 2021 Open Whisper Systems. All rights reserved.
 //
 
 #import "TSAttachment.h"
@@ -29,15 +29,6 @@ NSUInteger const TSAttachmentSchemaVersion = 5;
 @implementation TSAttachment
 
 @synthesize contentType = _contentType;
-
-#pragma mark - Dependencies
-
-- (AttachmentReadCache *)attachmentReadCache
-{
-    return SSKEnvironment.shared.modelReadCaches.attachmentReadCache;
-}
-
-#pragma mark -
 
 // This constructor is used for new instances of TSAttachmentPointer,
 // i.e. undownloaded incoming attachments.
@@ -435,13 +426,27 @@ NSUInteger const TSAttachmentSchemaVersion = 5;
     return _contentType.filterFilename;
 }
 
+// This method should only be called on instances which have
+// not yet been inserted into the database.
+- (void)replaceUnsavedContentType:(NSString *)contentType
+{
+    if (contentType.length < 1) {
+        OWSFailDebug(@"Missing or empty contentType.");
+        return;
+    }
+    if (self.contentType.length > 0 && ![self.contentType isEqualToString:contentType]) {
+        OWSLogInfo(@"Replacing content type: %@ -> %@", self.contentType, contentType);
+    }
+    _contentType = contentType;
+}
+
 #pragma mark -
 
 - (void)anyDidInsertWithTransaction:(SDSAnyWriteTransaction *)transaction
 {
     [super anyDidInsertWithTransaction:transaction];
 
-    [self.attachmentReadCache didInsertOrUpdateAttachment:self transaction:transaction];
+    [self.modelReadCaches.attachmentReadCache didInsertOrUpdateAttachment:self transaction:transaction];
 }
 
 - (void)anyWillRemoveWithTransaction:(SDSAnyWriteTransaction *)transaction
@@ -455,14 +460,14 @@ NSUInteger const TSAttachmentSchemaVersion = 5;
 {
     [super anyDidUpdateWithTransaction:transaction];
 
-    [self.attachmentReadCache didInsertOrUpdateAttachment:self transaction:transaction];
+    [self.modelReadCaches.attachmentReadCache didInsertOrUpdateAttachment:self transaction:transaction];
 }
 
 - (void)anyDidRemoveWithTransaction:(SDSAnyWriteTransaction *)transaction
 {
     [super anyDidRemoveWithTransaction:transaction];
 
-    [self.attachmentReadCache didRemoveAttachment:self transaction:transaction];
+    [self.modelReadCaches.attachmentReadCache didRemoveAttachment:self transaction:transaction];
 }
 
 - (void)setDefaultContentType:(NSString *)contentType

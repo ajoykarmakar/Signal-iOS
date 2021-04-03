@@ -12,48 +12,19 @@
 #import "TSAccountManager.h"
 #import "TSConstants.h"
 #import "TSRequest.h"
-#import <AxolotlKit/NSData+keyVersionByte.h>
-#import <AxolotlKit/SignedPreKeyRecord.h>
 #import <Curve25519Kit/Curve25519.h>
 #import <SignalCoreKit/Cryptography.h>
 #import <SignalCoreKit/NSData+OWS.h>
 #import <SignalMetadataKit/SignalMetadataKit-Swift.h>
+#import <SignalServiceKit/NSData+keyVersionByte.h>
 #import <SignalServiceKit/SignalServiceKit-Swift.h>
+#import <SignalServiceKit/SignedPreKeyRecord.h>
 
 NS_ASSUME_NONNULL_BEGIN
 
 NSString *const OWSRequestKey_AuthKey = @"AuthKey";
 
 @implementation OWSRequestFactory
-
-#pragma mark - Dependencies
-
-+ (TSAccountManager *)tsAccountManager
-{
-    return TSAccountManager.shared;
-}
-
-+ (OWS2FAManager *)ows2FAManager
-{
-    return OWS2FAManager.shared;
-}
-
-+ (id<ProfileManagerProtocol>)profileManager
-{
-    return SSKEnvironment.shared.profileManager;
-}
-
-+ (id<OWSUDManager>)udManager
-{
-    return SSKEnvironment.shared.udManager;
-}
-
-+ (OWSIdentityManager *)identityManager
-{
-    return SSKEnvironment.shared.identityManager;
-}
-
-#pragma mark -
 
 + (TSRequest *)enable2FARequestWithPin:(NSString *)pin
 {
@@ -294,7 +265,7 @@ NSString *const OWSRequestKey_AuthKey = @"AuthKey";
 
 + (TSRequest *)unregisterAccountRequest
 {
-    NSString *path = [NSString stringWithFormat:@"%@/%@", textSecureAccountsAPI, @"apn"];
+    NSString *path = [NSString stringWithFormat:@"%@/%@", textSecureAccountsAPI, @"me"];
     return [TSRequest requestWithUrl:[NSURL URLWithString:path] method:@"DELETE" parameters:@{}];
 }
 
@@ -541,16 +512,18 @@ NSString *const OWSRequestKey_AuthKey = @"AuthKey";
                                       messages:(NSArray *)messages
                                      timeStamp:(uint64_t)timeStamp
                                    udAccessKey:(nullable SMKUDAccessKey *)udAccessKey
+                                      isOnline:(BOOL)isOnline
 {
     // NOTE: messages may be empty; See comments in OWSDeviceManager.
     OWSAssertDebug(recipientAddress.isValid);
     OWSAssertDebug(timeStamp > 0);
 
     NSString *path = [textSecureMessagesAPI stringByAppendingString:recipientAddress.serviceIdentifier];
-    NSDictionary *parameters = @{
-        @"messages" : messages,
-        @"timestamp" : @(timeStamp),
-    };
+
+    // Returns the per-account-message parameters used when submitting a message to
+    // the Signal Web Service.
+    // See: https://github.com/signalapp/Signal-Server/blob/master/service/src/main/java/org/whispersystems/textsecuregcm/entities/IncomingMessageList.java
+    NSDictionary *parameters = @{ @"messages" : messages, @"timestamp" : @(timeStamp), @"online" : @(isOnline) };
 
     TSRequest *request = [TSRequest requestWithUrl:[NSURL URLWithString:path] method:@"PUT" parameters:parameters];
     if (udAccessKey != nil) {
